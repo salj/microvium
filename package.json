@@ -20,6 +20,8 @@
     "rebuild:release": "ts-node scripts/sync-opcodes.ts && node-gyp rebuild --debug && tsc && npm run copy-files && ts-node scripts/preprocess-microvium",
     "build:watch": "tsc --watch --preserveWatchOutput false",
     "build:compiler-bundle": "node scripts/build-compiler-bundle.mjs",
+    "build:compiler-wasm": "node scripts/build-compiler-wasm.mjs",
+    "fetch:javy": "bash scripts/fetch-javy.sh",
     "install": "node-gyp-build",
     "prepublishOnly": "prebuildify --napi",
     "update-coverage-markers": "ts-node scripts/update-coverage-markers",

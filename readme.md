@@ -50,6 +50,7 @@ See [Getting Started](./doc/getting-started.md) which walks you through all 3 of
   - [Concepts](./doc/concepts.md)
   - [Reference](./doc/reference.md)
   - [Contribute](./doc/contribute.md)
+  - [Browser WebAssembly demo](./docs/browser-wasm.md)
 
 ## Contributing
 

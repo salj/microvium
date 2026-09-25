@@ -24,6 +24,7 @@
     "build:runtime-wasm": "bash wasm-build/build.sh",
     "build:web-demo": "node scripts/build-web-demo.mjs",
     "fetch:javy": "bash scripts/fetch-javy.sh",
+    "test:compiler-wasm": "mocha --no-config --require ts-node/register --ui tdd web/compiler/compiler.test.ts web/compiler/compiler-wasm.test.ts",
     "test:runtime-wasm": "mocha --no-config --require ts-node/register --ui tdd web/runtime/runtime.test.ts",
     "test:web-integration": "node --test web/demo/integration.test.mjs",
     "install": "node-gyp-build",

@@ -11,3 +11,7 @@ target_include_directories(restoring-a-snapshot-in-c PUBLIC
                           "${PROJECT_SOURCE_DIR}/microvium"
                           "${PROJECT_SOURCE_DIR}"
                           )
+
+if(UNIX AND NOT APPLE)
+  target_link_libraries(restoring-a-snapshot-in-c PRIVATE m)
+endif()

@@ -14,5 +14,11 @@ function run(command, args) {
   if (result.status !== 0) throw new Error(`${command} exited with status ${result.status}`);
 }
 
+const javyCheck = spawnSync(javy, ['--version'], { cwd: root, stdio: 'ignore' });
+if (javyCheck.error || javyCheck.status !== 0) {
+  if (process.env.JAVY) throw new Error(`Javy executable not available: ${javy}`);
+  run('bash', ['scripts/fetch-javy.sh']);
+}
+
 run(process.execPath, ['scripts/build-compiler-bundle.mjs', 'web/compiler/javy-entry.ts', jsBundle]);
 run(javy, ['build', jsBundle, '-o', wasmOutput]);

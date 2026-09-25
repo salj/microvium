@@ -5,7 +5,8 @@
   "description": "A compact, embeddable scripting engine for microcontrollers for executing small scripts written in a subset of JavaScript.",
   "main": "dist/lib.js",
   "bin": {
-    "microvium": "dist/cli.js"
+    "microvium": "dist/cli.js",
+    "microvium-compile": "bin/microvium-compile.mjs"
   },
   "scripts": {
     "test:js": "mocha --require source-map-support/register",
@@ -21,6 +22,9 @@
     "build:watch": "tsc --watch --preserveWatchOutput false",
     "build:compiler-bundle": "node scripts/build-compiler-bundle.mjs",
     "build:compiler-wasm": "node scripts/build-compiler-wasm.mjs",
+    "build:compiler-native": "node scripts/build-compiler-native.mjs",
+    "build:compiler": "npm run build:compiler-wasm && node scripts/build-compiler-native.mjs",
+    "compile:wasm": "node bin/microvium-compile.mjs",
     "build:runtime-wasm": "bash wasm-build/build.sh",
     "build:web-demo": "node scripts/build-web-demo.mjs",
     "fetch:javy": "bash scripts/fetch-javy.sh",
@@ -28,6 +32,7 @@
     "test:runtime-wasm": "mocha --no-config --require ts-node/register --ui tdd web/runtime/runtime.test.ts",
     "test:web-integration": "node --test web/demo/integration.test.mjs",
     "install": "node-gyp-build",
+    "prepack": "npm run build:compiler-wasm",
     "prepublishOnly": "prebuildify --napi",
     "update-coverage-markers": "ts-node scripts/update-coverage-markers",
     "copy-files": "ts-node scripts/sync-opcodes.ts && ts-node scripts/copy-files",

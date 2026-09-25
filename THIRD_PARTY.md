@@ -4,13 +4,19 @@ This inventory covers third-party code present in the compiler and its built
 artifacts. Build and test tools are excluded. Versions are pinned by
 `package-lock.json` or the Javy 9.1.0 release and its `Cargo.lock`.
 
-Audited outputs from `npm run build:web-demo`:
+Audited compiler outputs:
 
 | Output | Shipped code |
 | --- | --- |
 | `dist-web/app.js` | Browser WASI shim |
 | `dist-web/compiler.wasm` | Compiler support JavaScript, Javy runtime, QuickJS-NG, JSON/runtime Rust crates, and WASI libc support |
 | `dist-web/microvium-runtime.wasm` | Microvium project code only; built with `-nostdlib` |
+| npm package `microvium-compile` | CLI wrapper and `dist-web/compiler.wasm`; Wasmer or Wasmtime is provided by the user |
+| `dist-native/microvium-compile` | AOT-compiled `dist-web/compiler.wasm`; dynamically links to the user's Wasmer `libwasmer.so` |
+
+The native ELF contains the same compiler project code and dependencies listed
+for `compiler.wasm`, compiled to host machine code. The Wasmer runtime itself is
+loaded from the Wasmer installation and is not embedded in the ELF.
 
 ## Projects and applicable license texts
 

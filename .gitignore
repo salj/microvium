@@ -1,6 +1,7 @@
 /node_modules
 /dist
 /dist-web
+/dist-native
 /.tools
 trace.*
 .yo-repository

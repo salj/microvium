@@ -1,7 +1,7 @@
 # Third-party components
 
-The compiler-WASM work is in progress. This inventory records exact package
-versions already used by its source entry and bundle build.
+These components are used by the browser compiler and demo. The versions below
+are pinned in `package-lock.json` or by the Javy fetch script.
 
 | Component | Version | License | Use |
 | --- | --- | --- | --- |

@@ -2,7 +2,7 @@ import * as VM from './virtual-machine';
 import * as IL from './il';
 import { mapObject, notImplemented, assertUnreachable, hardAssert, invalidOperation, notUndefined, todo, unexpected, stringifyIdentifier, writeTextFile } from './utils';
 import { SnapshotIL, stringifySnapshotIL } from './snapshot-il';
-import { Microvium, ModuleObject, HostImportFunction, HostImportTable, SnapshottingOptions, defaultHostEnvironment, ModuleSource, ImportHook, MemoryStats } from '../lib';
+import type { Microvium, ModuleObject, HostImportFunction, HostImportTable, SnapshottingOptions, ModuleSource, ImportHook, MemoryStats } from '../lib';
 import { SnapshotClass } from './snapshot';
 import { EventEmitter } from 'events';
 // import { SynchronousWebSocketServer } from './synchronous-ws-server';
@@ -70,7 +70,7 @@ export class VirtualMachineFriendly implements Microvium {
   }
 
   public static create(
-    hostImportMap: HostImportFunction | HostImportTable = defaultHostEnvironment,
+    hostImportMap: HostImportFunction | HostImportTable = {},
     opts: VM.VirtualMachineOptions = {}
   ): VirtualMachineFriendly {
     return new VirtualMachineFriendly(undefined, hostImportMap, opts);

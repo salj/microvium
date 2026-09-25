@@ -121,7 +121,10 @@ suite('getting-started', function () {
       exec(`cmake ..`);
       exec(`cmake --build .`);
       process.chdir("..");
-      let result = exec('"./build/Debug/restoring-a-snapshot-in-c.exe"');
+      const executable = process.platform === 'win32'
+        ? '"./build/Debug/restoring-a-snapshot-in-c.exe"'
+        : './build/restoring-a-snapshot-in-c';
+      let result = exec(executable);
       assert.deepEqual(result.stderr, '');
       assert.deepEqual(result.stdout.trim(), 'Hello, World!');
     } finally {

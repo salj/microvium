@@ -29,6 +29,7 @@ public:
 
   mvm_VM* _vm;
   mvm_Handle _handle;
+  Napi::Reference<Napi::Object> _vmOwner;
 };
 
 } // namespace VM

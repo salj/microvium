@@ -3,6 +3,7 @@
 #include <stdexcept>
 
 #include "misc.hh"
+#include "NativeVM.hh"
 
 Napi::FunctionReference VM::Value::constructor;
 
@@ -23,6 +24,9 @@ void VM::Value::Init(Napi::Env env, Napi::Object exports) {
 Napi::Object VM::Value::wrap(mvm_VM* vm, mvm_Value value) {
   auto resultWrapper = Value::constructor.New({});
   auto unwrapped = Value::Unwrap(resultWrapper);
+  // The handle is registered in the VM, so its wrapper must outlive the Value.
+  auto owner = static_cast<NativeVM*>(mvm_getContext(vm));
+  unwrapped->_vmOwner = Napi::Reference<Napi::Object>::New(owner->Value(), 1);
   mvm_initializeHandle(vm, &unwrapped->_handle);
   mvm_handleSet( &unwrapped->_handle, value);
   unwrapped->_vm = vm;

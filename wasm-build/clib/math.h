@@ -9,5 +9,5 @@ extern double pow(double x, double y);
 
 #define isfinite(x) (__builtin_isfinite(x))
 #define isnan(x) (__builtin_isnan(x))
+#define isinf(x) (__builtin_isinf(x))
 #define signbit(x) (__builtin_signbit(x))
-

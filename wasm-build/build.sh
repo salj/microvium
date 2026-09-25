@@ -1,34 +1,45 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
-CC="clang \
-	--target=wasm32 \
-	-nostdlib \
-	-O0 \
-	-I . \
-	-I ./clib -Werror \
-	-nostdlib \
-	-mbulk-memory"
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+cd "$script_dir"
 
+cc="${CC:-clang}"
+ld="${WASM_LD:-wasm-ld}"
+mkdir -p build
 
-$CC -o build/microvium.o -c ../native-vm/microvium.c
-$CC -o build/allocator.o -c allocator.c
-$CC -o build/clib.o -c clib/clib.c
-$CC -o build/glue.o -c glue.c
+cflags=(
+  --target=wasm32-unknown-unknown
+  -nostdlib
+  -O2
+  -ffunction-sections
+  -fdata-sections
+  -I .
+  -I ./clib
+  -Werror
+  -mbulk-memory
+)
 
-wasm-ld-15 \
-	--no-entry \
-	--export-all \
-	--lto-O3 \
-	--allow-undefined \
-	--import-memory \
-	--Map microvium.map \
-	-o microvium.wasm \
-	--global-base=0 \
-	build/allocator.o \
-	build/glue.o \
-	build/microvium.o \
-	build/clib.o
+"$cc" "${cflags[@]}" -c "$repo_root/native-vm/microvium.c" -o build/microvium.o
+"$cc" "${cflags[@]}" -c allocator.c -o build/allocator.o
+"$cc" "${cflags[@]}" -c clib/clib.c -o build/clib.o
+"$cc" "${cflags[@]}" -c glue.c -o build/glue.o
 
-# Requires `npm install -g wat-wasm``
-wasm2wat microvium.wasm
+"$ld" \
+  --no-entry \
+  --export-all \
+  --gc-sections \
+  --lto-O3 \
+  --allow-undefined \
+  --import-memory \
+  --initial-memory=262144 \
+  --max-memory=262144 \
+  -z stack-size=8192 \
+  --global-base=0 \
+  --Map=build/microvium.map \
+  -o build/microvium-runtime.wasm \
+  build/allocator.o \
+  build/glue.o \
+  build/microvium.o \
+  build/clib.o

@@ -19,8 +19,8 @@
 // Reserve space for "RAM" and "ROM". Note that RAM needs to be constrained to
 // the first page of memory. Note that at the moment I don't know how to use the
 // full first page of memory.
-const uint8_t reserve_ram[0x10000]; // 64kB
-const uint8_t reserve_rom[0x10000]; // 64kB
+uint8_t reserve_ram[0x10000] __attribute__((aligned(0x10000))); // 64kB
+uint8_t reserve_rom[0x10000] __attribute__((aligned(0x10000))); // 64kB
 
 #define ALLOCATOR_START_ADDR ((void*)&reserve_ram)
 static void* const allocatorStartAddr = ((void*)&reserve_ram);
@@ -98,6 +98,7 @@ EXIT:
 }
 
 void allocator_free(void* ptr) {
+  if (!ptr) return;
   assert((intptr_t)ptr - (intptr_t)ALLOCATOR_START_ADDR < 0x10000);
   uint16_t* p = (uint16_t*)ptr;
   p--; // Go to header

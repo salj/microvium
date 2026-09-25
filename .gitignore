@@ -5,6 +5,7 @@
 trace.*
 .yo-repository
 /build
+/wasm-build/build/
 *.stackdump
 /prebuilds
 /test/end-to-end/artifacts/code-coverage-details.json

@@ -1,26 +1,30 @@
-# WASM Build
+# Microvium runtime WASM
 
-Note: although I'm on Windows, I'm using WSL (Ubuntu) to build because the installation instructions for Clang seems simpler on Ubuntu.
-
-The WASM build of Microvium uses **Clang** directly, not Emscripten, Emscripten apparently adds a bunch of extra stuff, and I wanted to keep the build output small (that's what Microvium's all about!). But also, Microvium is much more efficient if it can be compiled to execute in a single, pre-defined page of RAM, and I felt that this would be easier to control with Clang than with Emscripten.
-
-The steps here are inspired by [https://github.com/ern0/howto-wasm-minimal](https://github.com/ern0/howto-wasm-minimal).
-
-
-## Environment Setup
-
-I used this command to install llvm:
+Build with the installed Clang and LLD tools:
 
 ```sh
-sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
+npm run build:runtime-wasm
+npm run test:runtime-wasm
 ```
 
-I also installed clang using `sudo apt install clang`. Honestly I'm not sure if this is required.
+The output is `wasm-build/build/microvium-runtime.wasm`. It imports a four-page
+WebAssembly memory and three functions from `env`: `mvm_wasm_host_import(id,
+number)`, `fmod(a, b)`, and `pow(a, b)`. The C runtime reserves one aligned 64kB
+page for VM RAM and one for snapshot bytes. Other memory holds the C globals
+and stack.
 
+The browser-facing exports are:
 
-## Building
+- `mvm_wasm_snapshot_buffer()` and `mvm_wasm_snapshot_capacity()` provide the
+  byte range where JavaScript copies the compiled snapshot.
+- `mvm_wasm_restore(length)` restores that snapshot and returns a Microvium
+  error code, with zero for success.
+- `mvm_wasm_call_export(id, number)` resolves and calls an export with one
+  numeric argument. It returns a Microvium error code.
+- `mvm_wasm_result_pointer()` points to a little-endian float64 result.
+- `mvm_wasm_free()` releases the restored VM.
 
-```sh
-cd wasm-build
-./build.sh
-```
+The initial ABI supports numeric arguments and results. The shared host import
+callback receives the Microvium host-function ID and one numeric argument, and
+returns one number. The caller owns the memory and must register the imported
+functions when it instantiates the module.

@@ -22,8 +22,10 @@
     "build:compiler-bundle": "node scripts/build-compiler-bundle.mjs",
     "build:compiler-wasm": "node scripts/build-compiler-wasm.mjs",
     "build:runtime-wasm": "bash wasm-build/build.sh",
+    "build:web-demo": "node scripts/build-web-demo.mjs",
     "fetch:javy": "bash scripts/fetch-javy.sh",
     "test:runtime-wasm": "mocha --no-config --require ts-node/register --ui tdd web/runtime/runtime.test.ts",
+    "test:web-integration": "node --test web/demo/integration.test.mjs",
     "install": "node-gyp-build",
     "prepublishOnly": "prebuildify --napi",
     "update-coverage-markers": "ts-node scripts/update-coverage-markers",
@@ -64,6 +66,7 @@
   "dependencies": {
     "@babel/parser": "^7.18.11",
     "@babel/types": "^7.12.12",
+    "@bjorn3/browser_wasi_shim": "0.4.2",
     "@types/resolve": "^1.14.0",
     "argparse": "^1.0.10",
     "bindings": "^1.5.0",

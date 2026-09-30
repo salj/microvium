@@ -5,6 +5,8 @@ import { hardAssert, notUndefined, unexpected } from "./utils";
 import { isUInt16, UInt8 } from './runtime-types';
 import { ModuleRelativeSource } from "./virtual-machine-types";
 import { opcodes, Opcode } from "./il-opcodes";
+import type { NumericType } from './numeric-types';
+export type { NumericType } from './numeric-types';
 export { opcodes, Opcode, RegName } from "./il-opcodes";
 
 export const MAX_INDEX = 0x3FFF;
@@ -137,6 +139,13 @@ export interface OtherOperation extends OperationBase {
     | 'LoadVar'
     | 'New'
     | 'Nop'
+    | 'NumericBinOp'
+    | 'NumericBinOpTyped'
+    | 'NumericCast'
+    | 'NumericIsInteger'
+    | 'NumericKindOf'
+    | 'NumericUnOp'
+    | 'NumericUnOpTyped'
     | 'ObjectGet'
     | 'ObjectKeys'
     | 'ObjectNew'
@@ -191,6 +200,7 @@ export type Operand =
   | LiteralOperand
   | IndexOperand
   | OpOperand
+  | NumericTypeOperand
   | FlagOperand
 
 export type OperandType = Operand['type'];
@@ -228,6 +238,13 @@ export interface FlagOperand {
 export interface OpOperand {
   type: 'OpOperand';
   subOperation: string;
+}
+
+export interface NumericTypeOperand {
+  type: 'NumericTypeOperand';
+  numericType: NumericType;
+  /** Default-float operations retain JavaScript coercion for non-Number operands. */
+  contextMode?: 'boundary' | 'default';
 }
 
 export interface Exception {
@@ -316,7 +333,8 @@ export interface BooleanValue {
 
 export interface NumberValue {
   type: 'NumberValue';
-  value: number;
+  value: number | bigint;
+  numericType?: NumericType;
 }
 
 export interface StringValue {
@@ -382,6 +400,8 @@ export type UnOpCode =
   | "~"
   | "typeof"
   | "typeCodeOf"
+  | "++"
+  | "--"
   //| "void"
   //| "delete"
 
@@ -429,6 +449,27 @@ export const trueValue: BooleanValue = Object.freeze({
 export const numberValue = (n: number): NumberValue => Object.freeze({
   type: 'NumberValue',
   value: n
+});
+
+export const typedIntegerValue = (signed: boolean, width: number, value: bigint): NumberValue => Object.freeze({
+  type: 'NumberValue',
+  value,
+  numericType: { kind: 'integer' as const, signed, width },
+});
+
+export const typedFloatValue = (width: 32 | 64, value: number): NumberValue => Object.freeze({
+  type: 'NumberValue',
+  value,
+  numericType: { kind: 'float' as const, width },
+});
+
+export const numericTypeOperand = (
+  numericType: NumericType,
+  contextMode?: NumericTypeOperand['contextMode'],
+): NumericTypeOperand => Object.freeze({
+  type: 'NumericTypeOperand',
+  numericType,
+  ...(contextMode ? { contextMode } : {}),
 });
 
 export const stringValue = (s: string): StringValue => Object.freeze({
@@ -511,6 +552,7 @@ export interface EphemeralObjectValue {
 export enum ExecutionFlag {
   FloatSupport = 0,
   CompiledWithOverflowChecks = 1,
+  NumericTypes = 2,
 }
 
 export function calcDynamicStackChangeOfOp(operation: Operation) {

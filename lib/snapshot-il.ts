@@ -6,7 +6,7 @@ import { crc16ccitt } from 'crc';
 
 export const ENGINE_MAJOR_VERSION = 8  /* aka MVM_BYTECODE_VERSION */;
 export const HEADER_SIZE = 28;
-export const ENGINE_MINOR_VERSION = 0  /* aka MVM_ENGINE_VERSION */;
+export const ENGINE_MINOR_VERSION = 1  /* aka MVM_ENGINE_VERSION */;
 
 /**
  * A snapshot represents the state of the machine captured at a specific moment
@@ -22,6 +22,7 @@ export interface SnapshotIL {
   exports: Map<IL.ExportID, IL.Value>;
   allocations: Map<IL.AllocationID, IL.Allocation>;
   flags: Set<IL.ExecutionFlag>;
+  numericOptions: NumericOptions;
   builtins: {
     arrayPrototype: IL.Value;
     promisePrototype: IL.Value;
@@ -29,6 +30,10 @@ export interface SnapshotIL {
     asyncCatchBlock: IL.Value;
     asyncHostCallback: IL.Value;
   }
+}
+
+export interface NumericOptions {
+  defaultFloatWidth: 32 | 64;
 }
 
 export function stringifySnapshotIL(snapshot: SnapshotIL, opts: StringifyILOpts = {}): string {
@@ -57,7 +62,7 @@ function stringifyAllocationRegion(region: IL.AllocationBase['memoryRegion']): s
 
 export function validateSnapshotBinary(bytecode: Buffer): { err: string } | undefined {
   // The first 8 bytes include the integrity metadata
-  if (bytecode.length < 8) return { err: 'Too short' };
+  if (bytecode.length < HEADER_SIZE) return { err: 'Too short' };
 
   const headerSize = bytecode.readUInt8(1);
   if (headerSize != HEADER_SIZE)
@@ -75,5 +80,22 @@ export function validateSnapshotBinary(bytecode: Buffer): { err: string } | unde
   const actualBytecodeVersion = bytecode.readUInt8(0);
   if (actualBytecodeVersion !== ENGINE_MAJOR_VERSION) {
     return { err: `Supported bytecode version is ${ENGINE_MAJOR_VERSION} but file is version ${actualBytecodeVersion}` };
+  }
+
+  const requiredEngineVersion = bytecode.readUInt8(2);
+  const numericOptions = bytecode.readUInt8(3);
+  const requiredFeatureFlags = bytecode.readUInt32LE(8);
+  const usesNumericTypes = (requiredFeatureFlags & (1 << IL.ExecutionFlag.NumericTypes)) !== 0;
+  if (requiredEngineVersion > ENGINE_MINOR_VERSION) {
+    return { err: `Engine version ${requiredEngineVersion} requires a later engine (implemented ${ENGINE_MINOR_VERSION})` };
+  }
+  if (requiredEngineVersion === 0 && (usesNumericTypes || numericOptions !== 0)) {
+    return { err: 'Invalid numeric options for an engine-minor-0 snapshot' };
+  }
+  if (!usesNumericTypes && numericOptions !== 0) {
+    return { err: 'Numeric options require the numeric-types feature' };
+  }
+  if ((numericOptions & ~0x01) !== 0) {
+    return { err: `Unknown numeric option bits: 0x${numericOptions.toString(16)}` };
   }
 }

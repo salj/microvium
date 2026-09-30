@@ -85,6 +85,10 @@ These globals are baked into the engine:
 - `NaN`
 - `undefined`
 - `Number.isNaN`
+- `Number.kind`
+- `Number.isInteger`
+
+See [supported builtins](./supported-builtins.md) for the numeric introspection APIs.
 
 These globals are available only at compile-time (they are [ephemerals](#ephemerals)):
 

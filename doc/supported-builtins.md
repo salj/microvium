@@ -4,6 +4,21 @@
 
 `Reflect.ownKeys` - returns an array of keys for an object (only supported on non-array, non-function objects)
 
+### Numeric introspection
+
+`Number.kind(value)` returns the semantic numeric flavor: `number` for an
+ordinary Number, `iN` or `uN` for a typed integer, and `f32` or `f64` for an
+explicit float. It returns `undefined` for non-numbers.
+
+`Number.isInteger(value)` returns true for every typed integer, including exact
+64-bit values above `2^53`. For ordinary Numbers and floating flavors it is true
+only for finite integral values; it returns false for non-numbers.
+
+`typeof` remains `"number"` for every numeric flavor. Numeric `===` and `!==`
+ignore flavor and compare numeric values. The VM's physical storage choice is
+not exposed by these builtins. See [Numeric types](./numeric-types.md) for
+arithmetic, conversion, and precision rules.
+
 ## Additional builtin function and objects
 
 ### vmExport(id, func)

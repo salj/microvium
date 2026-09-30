@@ -21,7 +21,7 @@ The browser-facing exports are:
   error code, with zero for success.
 - `mvm_wasm_call_export(id, number)` resolves and calls an export with one
   numeric argument. It returns a Microvium error code.
-- `mvm_wasm_result_pointer()` points to a little-endian float64 result.
+- `mvm_wasm_result_pointer()` points to a little-endian float result.
 - `mvm_wasm_free()` releases the restored VM.
 
 The initial ABI supports numeric arguments and results. The shared host import

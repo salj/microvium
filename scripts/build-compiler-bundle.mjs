@@ -7,6 +7,11 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const runtimeLibrary = await readFile(path.join(root, 'lib/runtime-library.mvm.js'), 'utf8');
 const entryPoint = process.argv[2] || 'web/compiler/entry.ts';
 const outputFile = process.argv[3] || 'dist-web/compiler-bundle.js';
+const defaultFloatWidth = process.env.MVM_DEFAULT_FLOAT_WIDTH || '64';
+
+if (defaultFloatWidth !== '32' && defaultFloatWidth !== '64') {
+  throw new Error('MVM_DEFAULT_FLOAT_WIDTH must be 32 or 64');
+}
 
 const nodeShims = {
   name: 'compiler-node-shims',
@@ -59,7 +64,10 @@ await build({
   format: 'iife',
   target: 'es2020',
   treeShaking: true,
-  define: { __dirname: JSON.stringify(path.join(root, 'lib')) },
+  define: {
+    __dirname: JSON.stringify(path.join(root, 'lib')),
+    __MVM_DEFAULT_FLOAT_WIDTH__: defaultFloatWidth,
+  },
   banner: { js: 'globalThis.process = globalThis.process || { env: {} }; globalThis.FinalizationRegistry = globalThis.FinalizationRegistry || class { constructor() {} register() {} unregister() { return false; } };' },
   plugins: [nodeShims],
   logLevel: 'info'

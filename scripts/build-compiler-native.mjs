@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const wasmInput = path.join(root, 'dist-web/compiler.wasm');
+const compilerConfig = path.join(root, 'dist-web/compiler-config.json');
 const outputDir = path.join(root, 'dist-native');
 
 let linkMode = 'dynamic';
@@ -46,6 +47,13 @@ const wasmer = process.env.WASMER || 'wasmer';
 const cc = process.env.CC || 'cc';
 if (!existsSync(wasmInput)) {
   throw new Error(`Compiler module not found: ${wasmInput}\nBuild it with: npm run build:compiler-wasm`);
+}
+if (!existsSync(compilerConfig)) {
+  throw new Error(`Compiler build metadata not found: ${compilerConfig}\nBuild it with: npm run build:compiler-wasm`);
+}
+const metadata = JSON.parse(await readFile(compilerConfig, 'utf8'));
+if (metadata.defaultFloatWidth !== 32 && metadata.defaultFloatWidth !== 64) {
+  throw new Error(`Invalid compiler default float width metadata: ${metadata.defaultFloatWidth}`);
 }
 const includeDir = run(wasmer, ['config', '--includedir']);
 const libraryDir = run(wasmer, ['config', '--libdir']);

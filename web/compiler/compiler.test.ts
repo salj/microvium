@@ -1,5 +1,7 @@
 import { assert } from 'chai';
 import { compileSource } from './entry';
+import { decodeSnapshot } from '../../lib/decode-snapshot';
+import * as IL from '../../lib/il';
 
 suite('browser compiler entry', () => {
   test('compiles Microvium source into a validated snapshot', () => {
@@ -11,5 +13,7 @@ suite('browser compiler entry', () => {
     assert.isAbove(snapshot.byteLength, 16);
     // compileSource constructs SnapshotClass, which validates the header and CRC.
     assert.isAbove(snapshot[0], 0);
+    const decoded = decodeSnapshot({ data: Buffer.from(snapshot) });
+    assert.isFalse(decoded.snapshotInfo.flags.has(IL.ExecutionFlag.NumericTypes));
   });
 });

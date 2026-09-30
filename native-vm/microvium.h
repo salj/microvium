@@ -16,7 +16,7 @@
 #include <stdint.h>
 
 #define MVM_ENGINE_MAJOR_VERSION 8  /* aka MVM_BYTECODE_VERSION */
-#define MVM_ENGINE_MINOR_VERSION 0  /* aka MVM_ENGINE_VERSION */
+#define MVM_ENGINE_MINOR_VERSION 1  /* aka MVM_ENGINE_VERSION */
 
 typedef uint16_t mvm_Value;
 typedef uint16_t mvm_VMExportID;
@@ -46,7 +46,7 @@ typedef enum mvm_TeError {
   /* 20 */ MVM_E_RANGE_ERROR,
   /* 21 */ MVM_E_DETACHED_EPHEMERAL,
   /* 22 */ MVM_E_TARGET_IS_NOT_A_VM_FUNCTION,
-  /* 23 */ MVM_E_FLOAT64,
+  /* 23 */ MVM_E_FLOAT,
   /* 24 */ MVM_E_NAN,
   /* 25 */ MVM_E_NEG_ZERO,
   /* 26 */ MVM_E_OPERATION_REQUIRES_FLOAT_SUPPORT,
@@ -82,7 +82,29 @@ typedef enum mvm_TeError {
   /* 56 */ MVM_E_HEAP_CORRUPT, // Microvium's internal heap is not in a consistent state
   /* 57 */ MVM_E_CLASS_PROTOTYPE_MUST_BE_NULL_OR_OBJECT, // The prototype property of a class must be null or a plain object
   /* 58 */ MVM_E_UNINITIALIZED_GLOBAL, // A global variable was not set before it was used.
+  /* 59 */ MVM_E_RESERVED_59,
+  /* 60 */ MVM_E_NUMERIC_ERROR, // Invalid mixed-numeric operation or conversion.
 } mvm_TeError;
+
+typedef enum mvm_TeNumericKind {
+  MVM_NUM_ORDINARY,
+  MVM_NUM_SIGNED,
+  MVM_NUM_UNSIGNED,
+  MVM_NUM_FLOAT,
+} mvm_TeNumericKind;
+
+/** Exact semantic flavor for a Number. Ordinary values use width 0; integer
+ * values use widths 1..64; float values use width 32 or 64. */
+typedef struct mvm_NumericValue {
+  mvm_TeNumericKind kind;
+  uint8_t width;
+  union {
+    int64_t i;
+    uint64_t u;
+    float f32;
+    double f64;
+  } value;
+} mvm_NumericValue;
 
 typedef enum mvm_TeType {
   VM_T_UNDEFINED   = 0,
@@ -304,11 +326,21 @@ MVM_EXPORT MVM_FLOAT64 mvm_toFloat64(mvm_VM* vm, mvm_Value value);
  *
  * For efficiency, use mvm_newInt32 instead if your value is an integer.
  *
- * Design note: mvm_newNumber creates a number *from* a float64, so it's named
- * `newNumber` and not `newFloat64`
+ * Design note: mvm_newNumber creates a number *from* a float, so it's named
+ * `newNumber` and not `newFloat`
+ *
+ * The parameter and result are always binary64. The VM applies the snapshot's
+ * ordinary-number default when creating a value.
  */
 MVM_EXPORT mvm_Value mvm_newNumber(mvm_VM* vm, MVM_FLOAT64 value);
 #endif
+
+/** Create or inspect an exact Number flavor. mvm_newNumeric normalizes integer
+ * inputs to their declared width. mvm_getNumeric returns MVM_E_TYPE_ERROR for
+ * non-Numbers and preserves integer payload bits without converting through a
+ * host double. */
+MVM_EXPORT mvm_TeError mvm_newNumeric(mvm_VM* vm, const mvm_NumericValue* value, mvm_Value* out);
+MVM_EXPORT mvm_TeError mvm_getNumeric(mvm_VM* vm, mvm_Value value, mvm_NumericValue* out);
 
 MVM_EXPORT bool mvm_isNaN(mvm_Value value);
 

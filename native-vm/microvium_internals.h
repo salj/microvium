@@ -32,8 +32,14 @@
 #define MVM_NATIVE_POINTER_IS_16_BIT 0
 #endif
 
-#ifndef MVM_FLOAT64_NAN
-#define MVM_FLOAT64_NAN ((MVM_FLOAT64)(INFINITY * 0.0))
+#if MVM_SUPPORT_FLOAT
+  #ifndef MVM_FLOAT_NAN
+    #define MVM_FLOAT_NAN ((double)(INFINITY * 0.0))
+  #endif
+  #define MVM_FLOAT32_FMOD(a, b) fmodf((a), (b))
+  #define MVM_FLOAT64_FMOD(a, b) fmod((a), (b))
+  #define MVM_FLOAT32_POW(a, b) powf((a), (b))
+  #define MVM_FLOAT64_POW(a, b) pow((a), (b))
 #endif
 
 #ifndef MVM_SAFE_MODE
@@ -598,7 +604,7 @@ typedef enum TeTypeCode {
   TC_REF_TOMBSTONE          = 0x0,
 
   TC_REF_INT32              = 0x1, // 32-bit signed integer
-  TC_REF_FLOAT64            = 0x2, // 64-bit float
+  TC_REF_NUMBER            = 0x2, // ordinary or explicitly flavored Number
 
   /**
    * UTF8-encoded string that may or may not be unique.
@@ -937,6 +943,11 @@ struct mvm_VM {
 
   void* context;
 
+  // Numeric snapshot semantics. Minor-0 snapshots leave numericTypes clear and
+  // keep the original raw-f64 representation.
+  bool numericTypes;
+  uint8_t defaultFloatWidth;
+
   #if MVM_INCLUDE_DEBUG_CAPABILITY
   TsBreakpoint* pBreakpoints;
   mvm_TfBreakpointCallback breakpointCallback;
@@ -960,6 +971,29 @@ struct mvm_VM {
   uint8_t gc_potentialCycleNumber;
   #endif // MVM_SAFE_MODE
 };
+
+typedef enum vm_TeNumericClass {
+  VM_NUM_ORDINARY,
+  VM_NUM_SIGNED,
+  VM_NUM_UNSIGNED,
+  VM_NUM_FLOAT,
+} vm_TeNumericClass;
+
+typedef struct vm_TsNumericType {
+  vm_TeNumericClass kind;
+  uint8_t width;
+} vm_TsNumericType;
+
+typedef struct vm_TsNumeric {
+  vm_TeNumericClass kind;
+  uint8_t width;
+  union {
+    int64_t i;
+    uint64_t u;
+    float f32;
+    double f64;
+  } value;
+} vm_TsNumeric;
 
 typedef struct TsInternedStringCell {
   ShortPtr spNext;
@@ -1146,6 +1180,16 @@ static void toInternedString(VM* vm, Value* pValue);
 static uint16_t vm_stringSizeUtf8(VM* vm, Value str);
 static bool vm_ramStringIsNonNegativeInteger(VM* vm, Value str);
 static TeError toInt32Internal(mvm_VM* vm, Value value, int32_t* out_result);
+static TeError vm_readNumeric(VM* vm, Value value, vm_TsNumeric* out);
+static double vm_numericAsDouble(const vm_TsNumeric* value);
+static TeError vm_writeNumeric(VM* vm, const vm_TsNumeric* value, Value* out);
+static TeError vm_numericBinary(VM* vm, vm_TeNumberOp op, const vm_TsNumeric* a, const vm_TsNumeric* b, const vm_TsNumericType* context, vm_TsNumeric* out);
+static TeError vm_numericBitwise(VM* vm, vm_TeBitwiseOp op, const vm_TsNumeric* a, const vm_TsNumeric* b, vm_TsNumeric* out);
+static TeError vm_numericUnary(VM* vm, vm_TeNumberOp op, const vm_TsNumeric* value, const vm_TsNumericType* context, vm_TsNumeric* out);
+static TeError vm_numericCast(VM* vm, const vm_TsNumeric* value, vm_TsNumericType target, vm_TsNumeric* out);
+static int vm_compareNumericExact(VM* vm, const vm_TsNumeric* a, const vm_TsNumeric* b);
+static TeError vm_numericBytecode(VM* vm, uint8_t opcode, uint8_t descriptor, Value* left, Value* right, Value* result, uint8_t* popCount);
+static bool vm_isNumberType(TeTypeCode type);
 static inline uint16_t vm_getAllocationSizeExcludingHeaderFromHeaderWord(uint16_t headerWord);
 static inline LongPtr LongPtr_add(LongPtr lp, int16_t offset);
 static inline uint16_t LongPtr_read2_aligned(LongPtr lp);
@@ -1279,7 +1323,7 @@ static const uint8_t typeStringOffsetByType[VM_T_END] = {
 static const uint8_t typeByTC[TC_END] = {
   VM_T_END,         /* TC_REF_TOMBSTONE          */
   VM_T_NUMBER,      /* TC_REF_INT32              */
-  VM_T_NUMBER,      /* TC_REF_FLOAT64            */
+  VM_T_NUMBER,      /* TC_REF_NUMBER           */
   VM_T_STRING,      /* TC_REF_STRING             */
   VM_T_STRING,      /* TC_REF_INTERNED_STRING    */
   VM_T_FUNCTION,    /* TC_REF_FUNCTION           */
@@ -1310,7 +1354,7 @@ static const uint8_t typeByTC[TC_END] = {
   (type*)mvm_allocateWithConstantHeader(vm, vm_makeHeaderWord(vm, typeCode, sizeof (type)), 2 + sizeof (type))
 
 #if MVM_SUPPORT_FLOAT
-static int32_t mvm_float64ToInt32(MVM_FLOAT64 value);
+static int32_t mvm_floatToInt32(MVM_FLOAT64 value);
 #endif
 
 #if MVM_VERY_EXPENSIVE_MEMORY_CHECKS
@@ -1355,11 +1399,11 @@ static int32_t mvm_float64ToInt32(MVM_FLOAT64 value);
  * signed integers in C.
  *
  * Explanation: Microvium tries to use 32-bit integer arithmetic where possible,
- * because it's more efficient than the standard 64-bit floating point
+ * because it's more efficient than the configured floating point
  * operations, especially on small microcontrollers. To give the appearance of
- * 64-bit floating point, Microvium needs to check when the result of such
+ * floating point, Microvium needs to check when the result of such
  * operations overflows the 32-bit range and needs to be re-calculated using
- * proper 64-bit floating point operations. These overflow checks can be
+ * proper floating point operations. These overflow checks can be
  * disabled to improve performance and reduce engine size.
  *
  * Example: `2_000_000_000 + 2_000_000_000` will add to:

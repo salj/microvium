@@ -81,7 +81,7 @@ Operation groups and their corresponding preparation logic
     - Prep pops one or two values off the stack and reads them into reg1 and
       reg2 respectively. The choice of 1 or 2 depends on the sub-range. If
       popping one value, the second is left as zero.
-    - Prep unpacks to either int32 or float64 depending on the corresponding
+    - Prep unpacks to either int32 or float depending on the corresponding
       data types.
     - The operations can dispatch to a different tail/follow through routine
       depending on whether they overflow or not.
@@ -264,6 +264,63 @@ typedef enum vm_TeOpcodeEx4 {
   VM_OP4_ENQUEUE_JOB         = 0x0C, // (No literal operands)
   VM_OP4_ASYNC_COMPLETE      = 0x0D, // (No literal operands)
 
+  // Typed numeric operations. These are followed by one numeric descriptor.
+  VM_OP4_NUM_ADD_TYPED       = 0x0E,
+  VM_OP4_NUM_SUB_TYPED,
+  VM_OP4_NUM_MUL_TYPED,
+  VM_OP4_NUM_DIV_TYPED,
+  VM_OP4_NUM_REM_TYPED,
+  VM_OP4_NUM_POW_TYPED,
+  VM_OP4_NUM_NEG_TYPED,
+  VM_OP4_NUM_AND_TYPED,
+  VM_OP4_NUM_OR_TYPED,
+  VM_OP4_NUM_XOR_TYPED,
+  VM_OP4_NUM_NOT_TYPED,
+  VM_OP4_NUM_SHL_TYPED,
+  VM_OP4_NUM_SHR_TYPED,
+  VM_OP4_NUM_USHR_TYPED,
+  VM_OP4_NUM_CAST,
+  VM_OP4_NUM_KIND,
+  VM_OP4_NUM_IS_INTEGER,
+
+  // Numeric operations using an explicit boundary context.
+  VM_OP4_NUM_ADD_CONTEXT,
+  VM_OP4_NUM_SUB_CONTEXT,
+  VM_OP4_NUM_MUL_CONTEXT,
+  VM_OP4_NUM_DIV_CONTEXT,
+  VM_OP4_NUM_REM_CONTEXT,
+  VM_OP4_NUM_POW_CONTEXT,
+  VM_OP4_NUM_NEG_CONTEXT,
+  VM_OP4_NUM_AND_CONTEXT,
+  VM_OP4_NUM_OR_CONTEXT,
+  VM_OP4_NUM_XOR_CONTEXT,
+  VM_OP4_NUM_NOT_CONTEXT,
+  VM_OP4_NUM_SHL_CONTEXT,
+  VM_OP4_NUM_SHR_CONTEXT,
+  VM_OP4_NUM_USHR_CONTEXT,
+  VM_OP4_NUM_PLUS_CONTEXT,
+  VM_OP4_NUM_INC_CONTEXT,
+  VM_OP4_NUM_DEC_CONTEXT,
+
+  // File-default float context. Ordinary results remain ordinary Numbers.
+  VM_OP4_NUM_ADD_DEFAULT,
+  VM_OP4_NUM_SUB_DEFAULT,
+  VM_OP4_NUM_MUL_DEFAULT,
+  VM_OP4_NUM_DIV_DEFAULT,
+  VM_OP4_NUM_REM_DEFAULT,
+  VM_OP4_NUM_POW_DEFAULT,
+  VM_OP4_NUM_NEG_DEFAULT,
+  VM_OP4_NUM_AND_DEFAULT,
+  VM_OP4_NUM_OR_DEFAULT,
+  VM_OP4_NUM_XOR_DEFAULT,
+  VM_OP4_NUM_NOT_DEFAULT,
+  VM_OP4_NUM_SHL_DEFAULT,
+  VM_OP4_NUM_SHR_DEFAULT,
+  VM_OP4_NUM_USHR_DEFAULT,
+  VM_OP4_NUM_PLUS_DEFAULT,
+  VM_OP4_NUM_INC_DEFAULT,
+  VM_OP4_NUM_DEC_DEFAULT,
+
 
   VM_OP4_END
 } vm_TeOpcodeEx4;
@@ -271,7 +328,7 @@ typedef enum vm_TeOpcodeEx4 {
 
 // Number operations. These are operations which take one or two arguments from
 // the stack and coerce them to numbers. Each of these will have two
-// implementations: one for 32-bit int, and one for 64-bit float.
+// implementations: one for 32-bit int, and one for the configured floating-point width.
 typedef enum vm_TeNumberOp {
 
   // (number, number) -> boolean

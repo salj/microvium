@@ -146,7 +146,7 @@ typedef struct mvm_TsBytecodeHeader { // Size = 12B + sectionOffsets
   uint8_t bytecodeVersion; // MVM_ENGINE_MAJOR_VERSION
   uint8_t headerSize;
   uint8_t requiredEngineVersion; // MVM_ENGINE_MINOR_VERSION
-  uint8_t reserved; // =0
+  uint8_t numericOptions;
 
   uint16_t bytecodeSize; // Including header
   uint16_t crc; // CCITT16 (header and data, of everything after the CRC)
@@ -163,7 +163,11 @@ typedef struct mvm_TsBytecodeHeader { // Size = 12B + sectionOffsets
 
 typedef enum mvm_TeFeatureFlags {
   FF_FLOAT_SUPPORT = 0,
+  /* bit 1 is compiler overflow-check metadata */
+  FF_NUMERIC_TYPES = 2,
 } mvm_TeFeatureFlags;
+
+#define MVM_NUMERIC_OPTION_DEFAULT_F32 0x01u
 
 typedef struct vm_TsExportTableEntry {
   mvm_VMExportID exportID;

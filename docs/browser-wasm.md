@@ -59,6 +59,11 @@ one numeric argument and must return a number. The wrapper does not provide
 general object or string marshalling, nor does the browser compiler expose
 Microvium's debugger.
 
+The runtime module imports `mvm_wasm_host_import`, `fmod`, `pow`, `fmodf`,
+`powf`, and `ldexp` from `env`. The supplied browser wrapper implements the
+math imports with JavaScript numeric operations; applications using the WASM
+module directly must provide the same imports.
+
 The JavaScript and WebAssembly boundary transports binary64 numbers and does
 not preserve a Microvium numeric flavor. On input, the C glue calls
 `mvm_newNumber`, which applies the snapshot's ordinary-number default. On

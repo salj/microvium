@@ -21,7 +21,10 @@ suite('runtime WebAssembly', () => {
           return arg * 3;
         },
         fmod: (a: number, b: number) => a % b,
-        pow: (a: number, b: number) => Math.pow(a, b)
+        pow: (a: number, b: number) => Math.pow(a, b),
+        fmodf: (a: number, b: number) => a % b,
+        powf: (a: number, b: number) => Math.pow(a, b),
+        ldexp: (value: number, exponent: number) => value * Math.pow(2, exponent)
       }
     });
     const exports = instance.exports as Record<string, (...args: number[]) => number>;

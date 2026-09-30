@@ -32,6 +32,7 @@ export interface MicroviumCreateOpts {
   noLib?: boolean;
   // For debug purposes: output IL generated for each input file
   outputIL?: boolean;
+  defaultFloatWidth?: 32 | 64;
 }
 
 export function create(

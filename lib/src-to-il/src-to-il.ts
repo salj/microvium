@@ -7,6 +7,8 @@ import { minOperandCount } from '../il-opcodes';
 import { analyzeScopes, AnalysisModel, SlotAccessInfo, PrologueStep, BlockScope, Scope } from './analyze-scopes';
 import { compileError, compileErrorIfReachable, featureNotSupported, internalCompileError, SourceCursor, visitingNode } from './common';
 import { formatSourceLoc } from '../stringify-il';
+import { NumericSourceInfo, analyzeNumericAnnotations, parseExactIntegerLiteral } from './numeric-annotations';
+import { NumericFlavor, NumericType, NumericValueData, binaryNumeric, convertNumeric, numericTypeName } from '../numeric-types';
 
 const outputStackDepthComments = false;
 
@@ -23,6 +25,10 @@ interface Context {
   // (before awaiting), or undefined if that information is not yet known.
   // Source location stored as `line:column` starting at 1:0 I think.
   awaitStackDepths?: Map<string, number>;
+  numericSourceInfo: NumericSourceInfo;
+  sourceText: string;
+  defaultFloatWidth: 32 | 64;
+  fileDefaultFloatWidth: 32 | 64;
 }
 
 interface ScopeStack {
@@ -94,12 +100,17 @@ function moveCursor(cur: Cursor, toLocation: Cursor): void {
 export function compileScript(
   filename: string,
   scriptText: string,
-  opts?: { awaitStackDepths?: Map<string, number> }
+  opts?: { awaitStackDepths?: Map<string, number>; defaultFloatWidth?: 32 | 64 }
 ): {
   unit: IL.Unit,
-  scopeAnalysis: AnalysisModel
+  scopeAnalysis: AnalysisModel,
+  numericTypesUsed: boolean,
+  fileDefaultFloatWidth: 32 | 64,
 } {
   const file = parseToAst(filename, scriptText);
+  const numericSourceInfo = analyzeNumericAnnotations(filename, scriptText, file);
+  const defaultFloatWidth = opts?.defaultFloatWidth ?? 64;
+  const fileDefaultFloatWidth = numericSourceInfo.fileDefaultFloatWidth ?? defaultFloatWidth;
 
   const scopeAnalysis = analyzeScopes(file, filename, opts?.awaitStackDepths);
 
@@ -111,6 +122,10 @@ export function compileScript(
     nextBlockID: 1,
     scopeAnalysis: scopeAnalysis,
     awaitStackDepths: opts?.awaitStackDepths,
+    numericSourceInfo,
+    sourceText: scriptText,
+    defaultFloatWidth,
+    fileDefaultFloatWidth,
   };
 
   const unit: IL.Unit = {
@@ -177,11 +192,17 @@ export function compileScript(
         const stackDepth = awaitPoint.stackDepthBefore ?? unexpected();
         awaitStackDepths.set(locStr, stackDepth);
       }
-      return compileScript(filename, scriptText, { awaitStackDepths });
+      return compileScript(filename, scriptText, { awaitStackDepths, defaultFloatWidth });
     }
   }
 
-  return { unit, scopeAnalysis };
+  return {
+    unit,
+    scopeAnalysis,
+    numericTypesUsed: numericSourceInfo.usesNumericTypes || fileDefaultFloatWidth === 32 ||
+      fileDefaultFloatWidth !== defaultFloatWidth,
+    fileDefaultFloatWidth,
+  };
 }
 
 // Similar to compileFunction but deals with module-level statements
@@ -1502,29 +1523,74 @@ export function compileSwitchStatement(cur: Cursor, statement: B.SwitchStatement
   popBreakScope(cur, statement);
 }
 
-export function compileExpression(cur: Cursor, expression_: B.Expression | B.PrivateName) {
+export function compileExpression(
+  cur: Cursor,
+  expression_: B.Expression | B.PrivateName,
+  numericContext?: NumericType,
+  numericContextMode?: IL.NumericTypeOperand['contextMode'],
+): void {
   if (!cur.reachable) return;
   const expression = expression_ as B.SupportedExpression;
+  const boundary = cur.ctx.numericSourceInfo.annotationAt(expression, 'boundary');
+  const cast = cur.ctx.numericSourceInfo.annotationAt(expression, 'cast');
+  const context = boundary?.numericType ?? numericContext;
+  const contextMode = boundary ? 'boundary' : numericContext ? numericContextMode ?? 'boundary' : undefined;
 
+  compileExpressionCore(cur, expression, context, contextMode);
+  if (boundary) {
+    addOp(cur, 'NumericCast', IL.numericTypeOperand(boundary.numericType));
+  }
+  if (cast) addOp(cur, 'NumericCast', IL.numericTypeOperand(cast.numericType));
+}
+
+function compileExpressionCore(
+  cur: Cursor,
+  expression: B.SupportedExpression,
+  numericContext?: NumericType,
+  numericContextMode?: IL.NumericTypeOperand['contextMode'],
+) {
   compilingNode(cur, expression);
   switch (expression.type) {
-    case 'BooleanLiteral':
-    case 'NumericLiteral':
+  case 'BooleanLiteral':
     case 'StringLiteral':
       return addOp(cur, 'Literal', literalOperand(expression.value));
+    case 'NumericLiteral': {
+      const integerType = numericContext?.kind === 'integer' ? numericContext : undefined;
+      if (integerType) {
+        const raw = cur.ctx.sourceText.slice(expression.start!, expression.end!);
+        try {
+          const value = parseExactIntegerLiteral(raw);
+          const normalized = convertNumeric(
+            { flavor: integerType, value }, integerType, cur.ctx.defaultFloatWidth,
+          ).value;
+          return addOp(cur, 'Literal', {
+            type: 'LiteralOperand',
+            literal: IL.typedIntegerValue(integerType.signed, integerType.width, normalized as bigint),
+          });
+        } catch (error) {
+          if (!(error instanceof SyntaxError)) {
+            return compileError(cur, `Invalid exact integer literal: ${raw}`, expression);
+          }
+        }
+      }
+      const value = numericContext === undefined && cur.ctx.fileDefaultFloatWidth === 32
+        ? Math.fround(expression.value)
+        : expression.value;
+      return addOp(cur, 'Literal', literalOperand(value));
+    }
     case 'NullLiteral': return addOp(cur, 'Literal', literalOperand(null));
     case 'Identifier': return compileIdentifier(cur, expression);
-    case 'BinaryExpression': return compileBinaryExpression(cur, expression);
-    case 'UpdateExpression': return compileUpdateExpression(cur, expression);
-    case 'UnaryExpression': return compileUnaryExpression(cur, expression);
-    case 'AssignmentExpression': return compileAssignmentExpression(cur, expression);
+    case 'BinaryExpression': return compileBinaryExpression(cur, expression, numericContext, numericContextMode);
+    case 'UpdateExpression': return compileUpdateExpression(cur, expression, numericContext, numericContextMode);
+    case 'UnaryExpression': return compileUnaryExpression(cur, expression, numericContext, numericContextMode);
+    case 'AssignmentExpression': return compileAssignmentExpression(cur, expression, numericContext, numericContextMode);
     case 'LogicalExpression': return compileLogicalExpression(cur, expression);
     case 'CallExpression': return compileCallExpression(cur, expression, false, false);
     case 'NewExpression': return compileNewExpression(cur, expression);
     case 'MemberExpression': return compileMemberExpression(cur, expression);
     case 'ArrayExpression': return compileArrayExpression(cur, expression);
     case 'ObjectExpression': return compileObjectExpression(cur, expression);
-    case 'ConditionalExpression': return compileConditionalExpression(cur, expression);
+    case 'ConditionalExpression': return compileConditionalExpression(cur, expression, numericContext, numericContextMode);
     case 'ThisExpression': return compileThisExpression(cur, expression);
     case 'ArrowFunctionExpression': return compileArrowFunctionExpression(cur, expression);
     case 'FunctionExpression': return compileFunctionExpression(cur, expression);
@@ -1670,7 +1736,208 @@ export function compileThisExpression(cur: Cursor, expression: B.ThisExpression)
   getSlotAccessor(cur, ref.access, true, 'this').load(cur);
 }
 
-export function compileConditionalExpression(cur: Cursor, expression: B.ConditionalExpression) {
+function fileDefaultNumericContext(cur: Cursor): NumericType | undefined {
+  return cur.ctx.fileDefaultFloatWidth === cur.ctx.defaultFloatWidth
+    ? undefined
+    : { kind: 'float', width: cur.ctx.fileDefaultFloatWidth };
+}
+
+function isArithmeticOperator(operator: IL.BinOpCode): boolean {
+  return operator === '+' || operator === '-' || operator === '*' || operator === '/' ||
+    operator === '%' || operator === '**' || operator === '&' || operator === '|' ||
+    operator === '^' || operator === '<<' || operator === '>>' || operator === '>>>';
+}
+
+function isShiftOperator(operator: IL.BinOpCode): boolean {
+  return operator === '<<' || operator === '>>' || operator === '>>>';
+}
+
+function inferredNumericFlavor(
+  cur: Cursor,
+  expression: B.Expression | B.PrivateName,
+  context?: NumericType,
+): NumericFlavor | undefined {
+  const annotation = cur.ctx.numericSourceInfo.annotationAt(expression, 'boundary') ??
+    cur.ctx.numericSourceInfo.annotationAt(expression, 'cast');
+  if (annotation) return annotation.numericType;
+
+  switch (expression.type) {
+    case 'NumericLiteral': {
+      if (context?.kind === 'integer') {
+        const raw = cur.ctx.sourceText.slice(expression.start!, expression.end!);
+        try {
+          parseExactIntegerLiteral(raw);
+          return context;
+        } catch {
+          return { kind: 'ordinary' };
+        }
+      }
+      return { kind: 'ordinary' };
+    }
+    case 'UnaryExpression': {
+      if (expression.operator !== '+' && expression.operator !== '-' && expression.operator !== '~') return undefined;
+      const argument = inferredNumericFlavor(cur, expression.argument as B.SupportedExpression, context);
+      if (context?.kind === 'integer') return context;
+      return argument;
+    }
+    case 'UpdateExpression':
+      return context?.kind === 'integer' ? context : undefined;
+    case 'BinaryExpression': {
+      const operator = expression.operator as IL.BinOpCode;
+      if (!isArithmeticOperator(operator)) return undefined;
+      const left = inferredNumericFlavor(cur, expression.left, context);
+      const right = inferredNumericFlavor(cur, expression.right, context);
+      return inferredBinaryFlavor(operator, left, right, context, cur.ctx.fileDefaultFloatWidth);
+    }
+    case 'AssignmentExpression': {
+      if (expression.operator === '=') {
+        return inferredNumericFlavor(cur, expression.right as B.SupportedExpression, context);
+      }
+      return undefined;
+    }
+    case 'ConditionalExpression': {
+      const consequent = inferredNumericFlavor(cur, expression.consequent, context);
+      const alternate = inferredNumericFlavor(cur, expression.alternate, context);
+      if (!consequent || !alternate) return undefined;
+      if (consequent.kind === 'ordinary' && alternate.kind === 'ordinary') return consequent;
+      if (consequent.kind === 'ordinary' || alternate.kind === 'ordinary') return undefined;
+      return sameNumericType(consequent, alternate) ? consequent : undefined;
+    }
+    default:
+      return undefined;
+  }
+}
+
+function inferredBinaryFlavor(
+  operator: IL.BinOpCode,
+  left: NumericFlavor | undefined,
+  right: NumericFlavor | undefined,
+  context: NumericType | undefined,
+  ordinaryDefault: 32 | 64,
+): NumericFlavor | undefined {
+  if (!left || !right) return undefined;
+  if (isShiftOperator(operator)) {
+    if (left.kind !== 'integer') return undefined;
+    return operator === '>>>' && left.signed
+      ? { kind: 'integer', signed: false, width: left.width }
+      : left;
+  }
+  if (left.kind === 'integer' && right.kind === 'integer') {
+    if (left.signed !== right.signed) return undefined;
+    return { kind: 'integer', signed: left.signed, width: Math.max(left.width, right.width) };
+  }
+  if (left.kind === 'float' || right.kind === 'float') {
+    const width = Math.max(
+      left.kind === 'float' ? left.width : 0,
+      right.kind === 'float' ? right.width : 0,
+      context?.kind === 'float' ? context.width : 0,
+      left.kind === 'ordinary' || right.kind === 'ordinary' ? ordinaryDefault : 0,
+    ) as 32 | 64;
+    return { kind: 'float', width };
+  }
+  if (context?.kind === 'integer') return context;
+  return { kind: 'ordinary' };
+}
+
+function sameNumericType(left: NumericType, right: NumericType): boolean {
+  return left.kind === right.kind && (left.kind === 'float'
+    ? left.width === right.width
+    : right.kind === 'integer' && left.signed === right.signed && left.width === right.width);
+}
+
+function staticNumericResultType(
+  cur: Cursor,
+  expression: B.BinaryExpression,
+  context?: NumericType,
+): NumericType | undefined {
+  const operator = expression.operator as IL.BinOpCode;
+  if (!isArithmeticOperator(operator)) return undefined;
+  const left = inferredNumericFlavor(cur, expression.left, context);
+  const right = inferredNumericFlavor(cur, expression.right, context);
+  if ((operator === '&' || operator === '|' || operator === '^') &&
+    (left?.kind === 'float' || right?.kind === 'float')) {
+    compileError(cur, 'Typed bitwise operations require integer flavors', expression);
+  }
+  if (!left || !right || left.kind === 'ordinary' || right.kind === 'ordinary') return undefined;
+  if (isShiftOperator(operator)) {
+    return left.kind === 'integer'
+      ? operator === '>>>' && left.signed
+        ? { kind: 'integer', signed: false, width: left.width }
+        : left
+      : undefined;
+  }
+  if (left.kind === 'integer' && right.kind === 'integer') {
+    if (left.signed !== right.signed) {
+      compileError(cur, `Implicit ${numericTypeName(left)} and ${numericTypeName(right)} arithmetic is not allowed`, expression);
+    }
+    return { kind: 'integer', signed: left.signed, width: Math.max(left.width, right.width) };
+  }
+  return {
+    kind: 'float',
+    width: Math.max(
+      left.kind === 'float' ? left.width : 0,
+      right.kind === 'float' ? right.width : 0,
+      context?.kind === 'float' ? context.width : 0,
+    ) as 32 | 64,
+  };
+}
+
+function constantIntegerValue(cur: Cursor, expression: B.Expression | B.PrivateName): bigint | undefined {
+  if (expression.type === 'NumericLiteral') {
+    const raw = cur.ctx.sourceText.slice(expression.start!, expression.end!);
+    try { return parseExactIntegerLiteral(raw); } catch { return undefined; }
+  }
+  if (expression.type === 'UnaryExpression' &&
+    (expression.operator === '-' || expression.operator === '+') &&
+    expression.argument.type === 'NumericLiteral') {
+    const raw = cur.ctx.sourceText.slice(expression.argument.start!, expression.argument.end!);
+    try {
+      const value = parseExactIntegerLiteral(raw);
+      return expression.operator === '-' ? -value : value;
+    } catch { return undefined; }
+  }
+  return undefined;
+}
+
+function validateNumericBinary(
+  cur: Cursor,
+  expression: B.BinaryExpression,
+  context?: NumericType,
+  contextMode?: IL.NumericTypeOperand['contextMode'],
+): void {
+  const operator = expression.operator as IL.BinOpCode;
+  if (!isArithmeticOperator(operator)) return;
+
+  const left = inferredNumericFlavor(cur, expression.left, context);
+  const right = inferredNumericFlavor(cur, expression.right, context);
+  const hasBoundaryContext = context !== undefined && contextMode !== 'default';
+  if (!hasBoundaryContext && !isShiftOperator(operator)) {
+    if (left?.kind === 'integer' && right?.kind === 'integer' && left.signed !== right.signed) {
+      compileError(cur, `Implicit ${numericTypeName(left)} and ${numericTypeName(right)} arithmetic is not allowed`, expression);
+    }
+    if ((left?.kind === 'integer' && right?.kind === 'ordinary') ||
+      (right?.kind === 'integer' && left?.kind === 'ordinary')) {
+      compileError(cur, 'Mixing an ordinary Number with a typed integer requires an explicit numeric boundary', expression);
+    }
+  }
+
+  const effectiveType = context ?? staticNumericResultType(cur, expression);
+  const rightConstant = constantIntegerValue(cur, expression.right);
+  const integerOperation = effectiveType?.kind === 'integer' || left?.kind === 'integer';
+  if (integerOperation && (operator === '/' || operator === '%') && rightConstant === 0n) {
+    compileError(cur, operator === '/' ? 'Constant integer division by zero' : 'Constant integer remainder by zero', expression.right);
+  }
+  if (integerOperation && isShiftOperator(operator) && rightConstant !== undefined && rightConstant < 0n) {
+    compileError(cur, 'Constant integer shift count cannot be negative', expression.right);
+  }
+}
+
+export function compileConditionalExpression(
+  cur: Cursor,
+  expression: B.ConditionalExpression,
+  numericContext?: NumericType,
+  numericContextMode?: IL.NumericTypeOperand['contextMode'],
+) {
   const consequent = predeclareBlock();
   const alternate = predeclareBlock();
   const after = predeclareBlock();
@@ -1681,11 +1948,11 @@ export function compileConditionalExpression(cur: Cursor, expression: B.Conditio
 
   // The -1 is because the branch instruction pops a value off the stack
   const consequentCur = createBlock(cur, consequent);
-  compileExpression(consequentCur, expression.consequent);
+  compileExpression(consequentCur, expression.consequent, numericContext, numericContextMode);
   addOp(consequentCur, 'Jump', labelOfBlock(after));
 
   const alternateCur = createBlock(cur, alternate);
-  compileExpression(alternateCur, expression.alternate);
+  compileExpression(alternateCur, expression.alternate, numericContext, numericContextMode);
   addOp(alternateCur, 'Jump', labelOfBlock(after));
 
   // The stack depth is the same as when we have the "test" result on the stack,
@@ -1903,7 +2170,12 @@ export function compileLogicalExpression(cur: Cursor, expression: B.LogicalExpre
   }
 }
 
-export function compileAssignmentExpression(cur: Cursor, expression: B.AssignmentExpression) {
+export function compileAssignmentExpression(
+  cur: Cursor,
+  expression: B.AssignmentExpression,
+  numericContext?: NumericType,
+  numericContextMode?: IL.NumericTypeOperand['contextMode'],
+) {
   if (expression.left.type === 'RestElement' ||
       expression.left.type === 'AssignmentPattern' ||
       expression.left.type === 'ArrayPattern' ||
@@ -1914,15 +2186,23 @@ export function compileAssignmentExpression(cur: Cursor, expression: B.Assignmen
   }
   if (expression.operator === '=') {
     const left = accessVariable(cur, expression.left);
-    compileExpression(cur, expression.right);
+    compileExpression(cur, expression.right, numericContext, numericContextMode);
     const value = valueAtTopOfStack(cur);
     left.store(cur, value);
   } else {
     const left = accessVariable(cur, expression.left);
     left.load(cur);
-    compileExpression(cur, expression.right);
     const operator = getBinOpFromAssignmentExpression(cur, expression.operator);
-    addOp(cur, 'BinOp', opOperand(operator));
+    const context = numericContext ?? (isArithmeticOperator(operator) ? fileDefaultNumericContext(cur) : undefined);
+    const contextMode = numericContext
+      ? numericContextMode ?? 'boundary'
+      : context ? 'default' : undefined;
+    compileExpression(cur, expression.right, context, contextMode);
+    if (context && isArithmeticOperator(operator)) {
+      addOp(cur, 'NumericBinOp', opOperand(operator), IL.numericTypeOperand(context, contextMode));
+    } else {
+      addOp(cur, 'BinOp', opOperand(operator));
+    }
     const value = valueAtTopOfStack(cur);
     left.store(cur, value);
   }
@@ -2108,7 +2388,12 @@ function getConstantAccessor(constant: IL.LiteralValueType): ValueAccessor {
   }
 }
 
-export function compileUnaryExpression(cur: Cursor, expression: B.UnaryExpression) {
+export function compileUnaryExpression(
+  cur: Cursor,
+  expression: B.UnaryExpression,
+  numericContext?: NumericType,
+  numericContextMode?: IL.NumericTypeOperand['contextMode'],
+) {
   if (!expression.prefix) {
     return compileError(cur, 'Not supported');
   }
@@ -2124,22 +2409,50 @@ export function compileUnaryExpression(cur: Cursor, expression: B.UnaryExpressio
     return compileError(cur, `Operator not supported: "${operator}"`);
   }
 
-  let unOpCode: IL.UnOpCode = operator;
+  const unOpCode: IL.UnOpCode = operator;
   // Special case for negative numbers, we just fold the negative straight into the literal
-  if (unOpCode === '-' && expression.argument.type === 'NumericLiteral') {
-    return addOp(cur, 'Literal', literalOperand(-expression.argument.value));
+  const operationContext = numericContext ?? ((operator === '+' || operator === '-')
+    ? fileDefaultNumericContext(cur)
+    : undefined);
+  const operationContextMode = numericContext
+    ? numericContextMode ?? 'boundary'
+    : operationContext ? 'default' : undefined;
+  if (unOpCode === '-' && expression.argument.type === 'NumericLiteral' && !operationContext) {
+    const value = -expression.argument.value;
+    return addOp(cur, 'Literal', literalOperand(cur.ctx.fileDefaultFloatWidth === 32 ? Math.fround(value) : value));
   }
-  compileExpression(cur, expression.argument);
-  addOp(cur, 'UnOp', opOperand(unOpCode));
+  const argument = expression.argument as B.SupportedExpression;
+  const argumentFlavor = inferredNumericFlavor(cur, argument, operationContext);
+  if (unOpCode === '~' && argumentFlavor?.kind === 'float') {
+    return compileError(cur, `Bitwise complement requires an integer flavor, received ${numericTypeName(argumentFlavor)}`, expression);
+  }
+  compileExpression(cur, argument, operationContext, operationContextMode);
+  if (operationContext) {
+    addOp(cur, 'NumericUnOp', opOperand(unOpCode), IL.numericTypeOperand(operationContext, operationContextMode));
+  } else if (argumentFlavor && argumentFlavor.kind !== 'ordinary') {
+    addOp(cur, 'NumericUnOpTyped', opOperand(unOpCode), IL.numericTypeOperand(argumentFlavor));
+  } else {
+    addOp(cur, 'UnOp', opOperand(unOpCode));
+  }
 }
 
-export function compileUpdateExpression(cur: Cursor, expression: B.UpdateExpression) {
-  let updaterOp: Procedure;
-  switch (expression.operator) {
-    case '++': updaterOp = cur => compileIncr(cur); break;
-    case '--': updaterOp = cur => compileDecr(cur); break;
-    default: updaterOp = assertUnreachable(expression.operator);
-  }
+export function compileUpdateExpression(
+  cur: Cursor,
+  expression: B.UpdateExpression,
+  numericContext?: NumericType,
+  numericContextMode?: IL.NumericTypeOperand['contextMode'],
+) {
+  const updater: IL.UnOpCode = expression.operator === '++' || expression.operator === '--'
+    ? expression.operator
+    : assertUnreachable(expression.operator);
+  const context = numericContext ?? fileDefaultNumericContext(cur) ?? {
+    kind: 'float' as const,
+    width: cur.ctx.defaultFloatWidth,
+  };
+  const contextMode = numericContext
+    ? numericContextMode ?? 'boundary'
+    : 'default';
+  const updaterOp: Procedure = cur => addOp(cur, 'NumericUnOp', opOperand(updater), IL.numericTypeOperand(context, contextMode));
 
   let accessor: ValueAccessor;
   const argument = expression.argument;
@@ -2202,25 +2515,25 @@ export function compileUpdateExpression(cur: Cursor, expression: B.UpdateExpress
   }
 }
 
-function compileIncr(cur: Cursor) {
-  // Note: this is not the JS ++ operator, it's just a sequence of operations
-  // that increments the slot at the top of the stack
-  addOp(cur, 'Literal', literalOperand(1));
-  addOp(cur, 'BinOp', opOperand('+'));
-}
-
-function compileDecr(cur: Cursor) {
-  // Note: this is not the JS ++ operator, it's just a sequence of operations
-  // that decrements the slot at the top of the stack
-  addOp(cur, 'Literal', literalOperand(1));
-  addOp(cur, 'BinOp', opOperand('-'));
-}
-
-export function compileBinaryExpression(cur: Cursor, expression: B.BinaryExpression) {
+export function compileBinaryExpression(
+  cur: Cursor,
+  expression: B.BinaryExpression,
+  numericContext?: NumericType,
+  numericContextMode?: IL.NumericTypeOperand['contextMode'],
+) {
   const binOpCode = getBinOpCode(cur, expression.operator);
+  const defaultContext = numericContext ??
+    (binOpCode === '+' || binOpCode === '-' || binOpCode === '*' || binOpCode === '/' ||
+      binOpCode === '%' || binOpCode === '**'
+      ? fileDefaultNumericContext(cur)
+      : undefined);
+  const defaultContextMode = numericContext
+    ? numericContextMode ?? 'boundary'
+    : defaultContext ? 'default' : undefined;
+  validateNumericBinary(cur, expression, defaultContext, defaultContextMode);
 
   // Special form for integer division `x / y | 0`
-  if (binOpCode === '|'
+  if (!defaultContext && binOpCode === '|'
     && expression.left.type === 'BinaryExpression'
     && expression.left.operator === '/'
     && expression.right.type === 'NumericLiteral'
@@ -2232,9 +2545,81 @@ export function compileBinaryExpression(cur: Cursor, expression: B.BinaryExpress
     return;
   }
 
-  compileExpression(cur, expression.left);
-  compileExpression(cur, expression.right);
-  addOp(cur, 'BinOp', opOperand(binOpCode));
+  const staticType = staticNumericResultType(cur, expression, numericContext);
+  if (staticType) {
+    const leftConstant = constantNumericValue(cur, expression.left, numericContext);
+    const rightConstant = constantNumericValue(cur, expression.right, numericContext);
+    if (leftConstant && rightConstant) {
+      try {
+        const folded = binaryNumeric(
+          binOpCode,
+          leftConstant,
+          rightConstant,
+          numericContext,
+          cur.ctx.fileDefaultFloatWidth,
+        );
+        if (typeof folded !== 'boolean') {
+          let value: IL.NumberValue;
+          if (folded.flavor.kind === 'integer') {
+            value = IL.typedIntegerValue(folded.flavor.signed, folded.flavor.width, BigInt(folded.value));
+          } else if (folded.flavor.kind === 'float') {
+            value = IL.typedFloatValue(folded.flavor.width, Number(folded.value));
+          } else {
+            value = IL.numberValue(Number(folded.value));
+          }
+          addOp(cur, 'Literal', { type: 'LiteralOperand', literal: value });
+          return;
+        }
+      } catch {
+        // Keep the operation in the IL so runtime numeric errors retain their
+        // normal timing and error code.
+      }
+    }
+  }
+  compileExpression(cur, expression.left, defaultContext, defaultContextMode);
+  compileExpression(cur, expression.right, defaultContext, defaultContextMode);
+  if (staticType) {
+    addOp(cur, 'NumericBinOpTyped', opOperand(binOpCode), IL.numericTypeOperand(staticType));
+  } else if (defaultContext && isArithmeticOperator(binOpCode)) {
+    addOp(cur, 'NumericBinOp', opOperand(binOpCode), IL.numericTypeOperand(defaultContext, defaultContextMode));
+  } else {
+    addOp(cur, 'BinOp', opOperand(binOpCode));
+  }
+}
+
+function constantNumericValue(
+  cur: Cursor,
+  expression: B.Expression | B.PrivateName,
+  context?: NumericType,
+): NumericValueData | undefined {
+  let literal: Extract<B.Expression, { type: 'NumericLiteral' }>;
+  let negative = false;
+  if (expression.type === 'NumericLiteral') {
+    literal = expression;
+  } else if (expression.type === 'UnaryExpression' &&
+    (expression.operator === '-' || expression.operator === '+') &&
+    expression.argument.type === 'NumericLiteral') {
+    literal = expression.argument;
+    negative = expression.operator === '-';
+  } else {
+    return undefined;
+  }
+
+  const annotation = cur.ctx.numericSourceInfo.annotationAt(expression, 'boundary') ??
+    cur.ctx.numericSourceInfo.annotationAt(expression, 'cast') ??
+    cur.ctx.numericSourceInfo.annotationAt(literal, 'boundary') ??
+    cur.ctx.numericSourceInfo.annotationAt(literal, 'cast');
+  const flavor: NumericFlavor = annotation?.numericType ?? context ?? { kind: 'ordinary' };
+  if (flavor.kind === 'integer') {
+    const raw = cur.ctx.sourceText.slice(expression.start!, expression.end!);
+    try {
+      return { flavor, value: parseExactIntegerLiteral(raw) };
+    } catch {
+      return undefined;
+    }
+  }
+  const value = negative ? -literal.value : literal.value;
+  return { flavor, value };
 }
 
 function getBinOpCode(cur: Cursor, operator: B.BinaryExpression['operator']): IL.BinOpCode {

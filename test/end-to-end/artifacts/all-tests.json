@@ -81,5 +81,6 @@
     "async-await await-over-snapshot-throw",
     "async-await host-async-no-await",
     "native-api mvm_stopAfterNInstructions",
-    "end-to-end globalThis"
+    "end-to-end globalThis",
+    "end-to-end mixed precision and integer widths match in the reference and native VMs"
 ]

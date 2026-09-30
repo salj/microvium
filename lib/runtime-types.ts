@@ -56,7 +56,7 @@ export enum mvm_TeError {
   /* 20 */ MVM_E_RANGE_ERROR,
   /* 21 */ MVM_E_DETACHED_EPHEMERAL,
   /* 22 */ MVM_E_TARGET_IS_NOT_A_VM_FUNCTION,
-  /* 23 */ MVM_E_FLOAT64,
+  /* 23 */ MVM_E_FLOAT,
   /* 24 */ MVM_E_NAN,
   /* 25 */ MVM_E_NEG_ZERO,
   /* 26 */ MVM_E_OPERATION_REQUIRES_FLOAT_SUPPORT,
@@ -92,6 +92,8 @@ export enum mvm_TeError {
   /* 56 */ MVM_E_HEAP_CORRUPT, // Microvium's internal heap is not in a consistent state
   /* 57 */ MVM_E_CLASS_PROTOTYPE_MUST_BE_NULL_OR_OBJECT, // The prototype property of a class must be null or a plain object
   /* 58 */ MVM_E_UNINITIALIZED_GLOBAL, // A global variable was not set before it was used.
+  /* 59 */ MVM_E_RESERVED_59,
+  /* 60 */ MVM_E_NUMERIC_ERROR, // Invalid mixed-numeric operation or conversion.
 };
 
 
@@ -128,7 +130,7 @@ export enum TeTypeCode {
   TC_REF_TOMBSTONE          = 0x0,
 
   TC_REF_INT32              = 0x1, // 32-bit signed integer
-  TC_REF_FLOAT64            = 0x2, // 64-bit float
+  TC_REF_NUMBER            = 0x2, // ordinary or explicitly flavored Number
 
   /**
    * UTF8-encoded string that may or may not be unique.

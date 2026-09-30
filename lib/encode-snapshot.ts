@@ -10,7 +10,8 @@ import { BinaryRegion, Future, FutureLike } from './binary-region';
 import { HTML, BinaryData } from './visual-buffer';
 import * as formats from './snapshot-binary-html-formats';
 import { SnapshotClass } from './snapshot';
-import { SnapshotIL, validateSnapshotBinary, ENGINE_MAJOR_VERSION, ENGINE_MINOR_VERSION } from './snapshot-il';
+import { SnapshotIL, validateSnapshotBinary, ENGINE_MAJOR_VERSION } from './snapshot-il';
+import { convertNumeric, encodeNumericTypeDescriptor } from './numeric-types';
 import { vm_TeOpcode, vm_TeOpcodeEx1, vm_TeOpcodeEx3 } from './bytecode-opcodes';
 import { crc16ccitt } from 'crc';
 import { SnapshotReconstructionInfo } from './decode-snapshot';
@@ -135,6 +136,12 @@ export function encodeSnapshot(snapshot: SnapshotIL, generateDebugHTML: boolean,
     hardAssert(flag >=0 && flag < 32);
     requiredFeatureFlags |= 1 << flag;
   }
+  const usesNumericTypes = snapshot.flags.has(IL.ExecutionFlag.NumericTypes);
+  if (snapshot.numericOptions.defaultFloatWidth === 32 && !usesNumericTypes) {
+    return invalidOperation('An f32 default requires the numeric-types snapshot feature');
+  }
+  const requiredEngineVersion = usesNumericTypes ? 1 : 0;
+  const numericOptions = usesNumericTypes && snapshot.numericOptions.defaultFloatWidth === 32 ? 0x01 : 0x00;
 
   assignIndexesToGlobalSlots();
 
@@ -146,8 +153,8 @@ export function encodeSnapshot(snapshot: SnapshotIL, generateDebugHTML: boolean,
 
   bytecode.append(ENGINE_MAJOR_VERSION, 'bytecodeVersion', formats.uInt8Row);
   bytecode.append(headerSize, 'headerSize', formats.uInt8Row);
-  bytecode.append(ENGINE_MINOR_VERSION, 'requiredEngineVersion', formats.uInt8Row);
-  bytecode.append(0, 'reserved', formats.uInt8Row);
+  bytecode.append(requiredEngineVersion, 'requiredEngineVersion', formats.uInt8Row);
+  bytecode.append(numericOptions, 'numericOptions', formats.uInt8Row);
 
   bytecode.append(bytecodeSize, 'bytecodeSize', formats.uInt16LERow);
   bytecode.append(bytecode.postProcess(crcRangeStart, crcRangeEnd, crc16ccitt), 'crc', formats.uHex16LERow);
@@ -334,6 +341,56 @@ export function encodeSnapshot(snapshot: SnapshotIL, generateDebugHTML: boolean,
     bytecode.appendBuffer(romAllocations);
   }
 
+  function encodeTaggedNumber(value: IL.NumberValue): Future<mvm_Value> {
+    if (value.numericType) {
+      const type = value.numericType;
+      const descriptor = encodeNumericTypeDescriptor(type);
+      return allocateLargePrimitive(TeTypeCode.TC_REF_NUMBER, b => {
+        b.append(descriptor, 'Numeric descriptor', formats.uInt16LERow);
+        if (type.kind === 'float') {
+          if (typeof value.value !== 'number') return invalidOperation('Typed float payload must be a Number');
+          const converted = convertNumeric({ flavor: type, value: value.value }, type, snapshot.numericOptions.defaultFloatWidth);
+          if (type.width === 32) b.append(converted.value as number, 'f32 payload', formats.floatLERow);
+          else b.append(converted.value as number, 'f64 payload', formats.doubleLERow);
+        } else {
+          if (typeof value.value !== 'bigint') return invalidOperation('Typed integer payload must be a bigint');
+          const converted = convertNumeric({ flavor: type, value: value.value }, type, snapshot.numericOptions.defaultFloatWidth);
+          const payload = converted.value as bigint;
+          const byteLength = type.width <= 16 ? 2 : type.width <= 32 ? 4 : 8;
+          const data = Buffer.alloc(byteLength);
+          if (byteLength === 2) {
+            if (type.signed) data.writeInt16LE(Number(payload));
+            else data.writeUInt16LE(Number(payload));
+          } else if (byteLength === 4) {
+            if (type.signed) data.writeInt32LE(Number(payload));
+            else data.writeUInt32LE(Number(payload));
+          } else if (type.signed) {
+            data.writeBigInt64LE(payload);
+          } else {
+            data.writeBigUInt64LE(payload);
+          }
+          data.forEach((byte, index) => b.append(byte, `integer payload[${index}]`, formats.uInt8Row));
+        }
+      }, {
+        debugName: `typed NumberValue(${stringifyValue(value)})`,
+      });
+    }
+
+    if (typeof value.value !== 'number') {
+      return invalidOperation('Ordinary NumberValue cannot contain a bigint payload');
+    }
+    let width = snapshot.numericOptions.defaultFloatWidth;
+    if (width === 32 && Math.fround(value.value) !== value.value) width = 64;
+    const descriptor = width === 32 ? 0x0100 : 0x0101;
+    return allocateLargePrimitive(TeTypeCode.TC_REF_NUMBER, b => {
+      b.append(descriptor, 'Ordinary Number descriptor', formats.uInt16LERow);
+      if (width === 32) b.append(value.value, 'ordinary f32 payload', formats.floatLERow);
+      else b.append(value.value, 'ordinary f64 payload', formats.doubleLERow);
+    }, {
+      debugName: `NumberValue(${stringifyValue(value)})`,
+    });
+  }
+
   function encodeValue(value: IL.Value, slotRegion: MemoryRegionID): FutureLike<mvm_Value> {
     switch (value.type) {
       case 'DeletedValue': return vm_TeWellKnownValues.VM_VALUE_DELETED;
@@ -342,13 +399,21 @@ export function encodeSnapshot(snapshot: SnapshotIL, generateDebugHTML: boolean,
       case 'NullValue': return vm_TeWellKnownValues.VM_VALUE_NULL;
       case 'NoOpFunction': return vm_TeWellKnownValues.VM_VALUE_NO_OP_FUNC;
       case 'NumberValue': {
+        if (!usesNumericTypes && (value.numericType || typeof value.value !== 'number')) {
+          return invalidOperation('Flavored numeric values cannot be encoded by the legacy snapshot format');
+        }
+        if (value.numericType) return encodeTaggedNumber(value);
+        if (typeof value.value !== 'number') return invalidOperation('Ordinary NumberValue cannot contain a bigint payload');
         if (isNaN(value.value)) return vm_TeWellKnownValues.VM_VALUE_NAN;
         if (Object.is(value.value, -0)) return vm_TeWellKnownValues.VM_VALUE_NEG_ZERO;
         if (isSInt14(value.value)) return encodeVirtualInt14(value.value);
         if (isSInt32(value.value)) return allocateLargePrimitive(TeTypeCode.TC_REF_INT32, b => b.append(value.value, 'Int32', formats.sInt32LERow), {
           debugName: `NumberValue(${stringifyValue(value)})`
         });
-        return allocateLargePrimitive(TeTypeCode.TC_REF_FLOAT64, b => b.append(value.value, 'Double', formats.doubleLERow), {
+        if (usesNumericTypes) return encodeTaggedNumber(value);
+        return allocateLargePrimitive(TeTypeCode.TC_REF_NUMBER, b => {
+          b.append(value.value, 'Double', formats.doubleLERow);
+        }, {
           debugName: `NumberValue(${stringifyValue(value)})`
         });
       };
@@ -728,7 +793,7 @@ export function encodeSnapshot(snapshot: SnapshotIL, generateDebugHTML: boolean,
       if (i < 2) continue; // Skip the first two internal slots which represent the dpNext and dpProto
       // Even-valued internal slots must be negative int14 because these
       // overload the property key positions.
-      if (i % 2 === 0) hardAssert(slot.type === 'NumberValue' && isSInt14(slot.value) && slot.value < 0);
+      if (i % 2 === 0) hardAssert(slot.type === 'NumberValue' && !slot.numericType && typeof slot.value === 'number' && isSInt14(slot.value) && slot.value < 0);
       writeValue(region, slot, memoryRegion, `TsPropertyList.internalSlots[${i}]`);
     }
 
@@ -1031,4 +1096,3 @@ export function programAddressToKey({ funcId, blockId, operationIndex }: IL.Prog
 const assertUInt16 = Future.lift((v: number) => hardAssert(isUInt16(v)));
 const assertUInt14 = Future.lift((v: number) => hardAssert(isUInt14(v)));
 const assertIsEven = (v: Future<number>, msg: string) => v.map(v => hardAssert(v % 2 === 0, msg));
-

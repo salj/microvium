@@ -10,6 +10,7 @@ import { vm_TeOpcode, vm_TeSmallLiteralValue, vm_TeOpcodeEx1, vm_TeOpcodeEx2, vm
 import { Snapshot } from '../lib';
 import { SnapshotClass } from './snapshot';
 import { blockTerminatingOpcodes } from './il-opcodes';
+import { decodeNumericTypeDescriptor, NumericType, numericTypeName } from './numeric-types';
 
 // TODO: Everything "notImplemented" in this file.
 
@@ -88,7 +89,7 @@ export function decodeSnapshot(snapshot: Snapshot): { snapshotInfo: SnapshotIL, 
   const bytecodeVersion = readHeaderField8('bytecodeVersion');
   const headerSize = readHeaderField8('headerSize');
   const requiredEngineVersion = readHeaderField8('requiredEngineVersion');
-  readHeaderField8('reserved');
+  const numericOptions = readHeaderField8('numericOptions');
   const bytecodeSize = readHeaderField16('bytecodeSize', false);
   const expectedCRC = readHeaderField16('expectedCRC', true);
   const requiredFeatureFlags = readHeaderField32('requiredFeatureFlags', false);
@@ -110,12 +111,27 @@ export function decodeSnapshot(snapshot: Snapshot): { snapshotInfo: SnapshotIL, 
     return invalidOperation(`Bytecode version ${bytecodeVersion} is not supported`);
   }
 
+  const usesNumericTypes = (requiredFeatureFlags & (1 << IL.ExecutionFlag.NumericTypes)) !== 0;
+  if (requiredEngineVersion > ENGINE_MINOR_VERSION) {
+    return invalidOperation(`Engine version ${requiredEngineVersion} requires a later engine (implemented ${ENGINE_MINOR_VERSION})`);
+  }
+  if (requiredEngineVersion === 0 && (usesNumericTypes || numericOptions !== 0)) {
+    return invalidOperation('Invalid numeric options for an engine-minor-0 snapshot');
+  }
+  if (!usesNumericTypes && numericOptions !== 0) {
+    return invalidOperation('Numeric options require the numeric-types feature');
+  }
+  if ((numericOptions & ~0x01) !== 0) {
+    return invalidOperation(`Unknown numeric option bits: 0x${numericOptions.toString(16)}`);
+  }
+
   const snapshotInfo: SnapshotIL = {
     globalSlots: new Map(),
     functions: new Map(),
     exports: new Map(),
     allocations: new Map(),
     flags: new Set(),
+    numericOptions: { defaultFloatWidth: (numericOptions & 0x01) !== 0 ? 32 : 64 },
     builtins: {
       promisePrototype: IL.undefinedValue,
       arrayPrototype: IL.undefinedValue,
@@ -133,10 +149,6 @@ export function decodeSnapshot(snapshot: Snapshot): { snapshotInfo: SnapshotIL, 
   }
 
   endRegion('Header');
-
-  if (requiredEngineVersion !== ENGINE_MINOR_VERSION) {
-    return invalidOperation(`Engine version ${requiredEngineVersion} is not supported (expected ${ENGINE_MINOR_VERSION})`);
-  }
 
   // Note: we could in future decode the ROM and HEAP sections explicitly, since
   // the heap is now parsable. But for the moment, just the reachable
@@ -682,7 +694,7 @@ export function decodeSnapshot(snapshot: Snapshot): { snapshotInfo: SnapshotIL, 
     switch (typeCode) {
       case TeTypeCode.TC_REF_TOMBSTONE: return unexpected();
       case TeTypeCode.TC_REF_INT32: return decodeInt32(region, offset, size);
-      case TeTypeCode.TC_REF_FLOAT64: return decodeFloat64(region, offset, size);
+      case TeTypeCode.TC_REF_NUMBER: return decodeNumber(region, offset, size);
       case TeTypeCode.TC_REF_STRING:
       case TeTypeCode.TC_REF_INTERNED_STRING: return decodeString(region, offset, size);
       case TeTypeCode.TC_REF_PROPERTY_LIST: return decodePropertyList(region, offset, size, section);
@@ -719,7 +731,99 @@ export function decodeSnapshot(snapshot: Snapshot): { snapshotInfo: SnapshotIL, 
     return value;
   }
 
-  function decodeFloat64(region: Region, offset: number, size: number): IL.Value {
+  function decodeNumber(region: Region, offset: number, size: number): IL.Value {
+    if (!usesNumericTypes) return decodeLegacyFloat(region, offset, size);
+    if (size < 2) return invalidOperation('Tagged Number allocation is missing its descriptor');
+
+    const descriptorWord = snapshot.data.readUInt16LE(offset);
+    const highByte = descriptorWord >>> 8;
+    const lowByte = descriptorWord & 0xFF;
+    if (highByte === 0x01) {
+      if (lowByte !== 0 && lowByte !== 1) {
+        return invalidOperation(`Invalid ordinary Number descriptor 0x${descriptorWord.toString(16)}`);
+      }
+      const width: 32 | 64 = lowByte === 0 ? 32 : 64;
+      const expectedSize = width === 32 ? 6 : 10;
+      if (size !== expectedSize) {
+        return invalidOperation(`Invalid ordinary f${width} Number payload size ${size}; expected ${expectedSize}`);
+      }
+      const number = width === 32
+        ? snapshot.data.readFloatLE(offset + 2)
+        : snapshot.data.readDoubleLE(offset + 2);
+      return recordNumber({ type: 'NumberValue', value: number }, region, offset, size, `Value (ordinary f${width})`);
+    }
+    if (highByte !== 0) {
+      return invalidOperation(`Invalid tagged Number descriptor word 0x${descriptorWord.toString(16)}`);
+    }
+
+    let numericType: NumericType;
+    try {
+      numericType = decodeNumericTypeDescriptor(lowByte);
+    } catch {
+      return invalidOperation(`Invalid numeric type descriptor 0x${lowByte.toString(16)}`);
+    }
+    const payloadSize = numericType.kind === 'float'
+      ? numericType.width === 32 ? 4 : 8
+      : numericType.width <= 16 ? 2 : numericType.width <= 32 ? 4 : 8;
+    const expectedSize = payloadSize + 2;
+    if (size !== expectedSize) {
+      return invalidOperation(`Invalid ${numericTypeName(numericType)} Number payload size ${size}; expected ${expectedSize}`);
+    }
+
+    let payload: number | bigint;
+    if (numericType.kind === 'float') {
+      payload = numericType.width === 32
+        ? snapshot.data.readFloatLE(offset + 2)
+        : snapshot.data.readDoubleLE(offset + 2);
+    } else {
+      const payloadOffset = offset + 2;
+      if (payloadSize === 2) {
+        payload = numericType.signed
+          ? BigInt(snapshot.data.readInt16LE(payloadOffset))
+          : BigInt(snapshot.data.readUInt16LE(payloadOffset));
+      } else if (payloadSize === 4) {
+        payload = numericType.signed
+          ? BigInt(snapshot.data.readInt32LE(payloadOffset))
+          : BigInt(snapshot.data.readUInt32LE(payloadOffset));
+      } else {
+        payload = numericType.signed
+          ? snapshot.data.readBigInt64LE(payloadOffset)
+          : snapshot.data.readBigUInt64LE(payloadOffset);
+      }
+      const integerPayload = payload as bigint;
+      const min = numericType.signed ? -(1n << BigInt(numericType.width - 1)) : 0n;
+      const max = numericType.signed
+        ? (1n << BigInt(numericType.width - 1)) - 1n
+        : (1n << BigInt(numericType.width)) - 1n;
+      if (integerPayload < min || integerPayload > max) {
+        return invalidOperation(`Integer payload is outside ${numericTypeName(numericType)} range`);
+      }
+    }
+
+    return recordNumber(
+      { type: 'NumberValue', value: payload, numericType },
+      region,
+      offset,
+      size,
+      `Value (${numericTypeName(numericType)})`,
+    );
+  }
+
+  function recordNumber(value: IL.NumberValue, region: Region, offset: number, size: number, label = 'Value'): IL.NumberValue {
+    processedAllocationsByOffset.set(offset, value);
+    region.push({
+      offset,
+      size,
+      content: { type: 'LabeledValue', label, value },
+    });
+    return value;
+  }
+
+  function decodeLegacyFloat(region: Region, offset: number, size: number): IL.Value {
+    const expectedSize = 8;
+    if (size !== expectedSize) {
+      return invalidOperation(`Invalid floating-point allocation size ${size}; expected ${expectedSize}`);
+    }
     const n = buffer.readDoubleLE(offset);
     const value: IL.NumberValue = {
       type: 'NumberValue',
@@ -1137,7 +1241,7 @@ export function decodeSnapshot(snapshot: Snapshot): { snapshotInfo: SnapshotIL, 
         const logical = getLogicalValue(value);
 
         // Internal slots
-        if (key.type === 'NumberValue' && isSInt14(key.value) && key.value < 0) {
+        if (key.type === 'NumberValue' && !key.numericType && typeof key.value === 'number' && isSInt14(key.value) && key.value < 0) {
           // Both the key and value are considered to be distinct internal
           // slots, so we can use the key slot for storage (as long as it's
           // storing a negative int14)
@@ -1303,6 +1407,7 @@ export function decodeSnapshot(snapshot: Snapshot): { snapshotInfo: SnapshotIL, 
       const dpData = readValueAt(offset, arrayRegion, 'dpData', true);
       const lengthValue = readLogicalAt(offset + 2, arrayRegion, 'viLength');
       if (lengthValue.type !== 'NumberValue') return unexpected();
+      if (typeof lengthValue.value !== 'number') return unexpected();
       const length = lengthValue.value;
       if (!isSInt14(length)) return unexpected();
       if (dpData.type === 'DeletedValue') return unexpected();
@@ -1412,6 +1517,71 @@ export function decodeSnapshot(snapshot: Snapshot): { snapshotInfo: SnapshotIL, 
   }
 
   function decodeInstruction(region: Region, stackDepthBefore: number | undefined, tryStack: TryStack | undefined): DecodeInstructionResult {
+    function decodeNumericExtended(op: vm_TeOpcodeEx4): DecodeInstructionResult {
+      const type = decodeNumericTypeDescriptor(buffer.readUInt8());
+      const name = numericTypeName(type);
+      if (op === vm_TeOpcodeEx4.VM_OP4_NUM_CAST) {
+        return {
+          operation: { opcode: 'NumericCast', operands: [IL.numericTypeOperand(type)] },
+          disassembly: `NumericCast(${name})`,
+        };
+      }
+
+      const typedStart = vm_TeOpcodeEx4.VM_OP4_NUM_ADD_TYPED;
+      const contextStart = vm_TeOpcodeEx4.VM_OP4_NUM_ADD_CONTEXT;
+      const defaultStart = vm_TeOpcodeEx4.VM_OP4_NUM_ADD_DEFAULT;
+      const binaryAndUnaryNames = ['+', '-', '*', '/', '%', '**', '-', '&', '|', '^', '~', '<<', '>>', '>>>'];
+      let family: 'typed' | 'boundary' | 'default';
+      let index: number;
+      if (op >= typedStart && op <= vm_TeOpcodeEx4.VM_OP4_NUM_USHR_TYPED) {
+        family = 'typed'; index = op - typedStart;
+      } else if (op >= contextStart && op <= vm_TeOpcodeEx4.VM_OP4_NUM_USHR_CONTEXT) {
+        family = 'boundary'; index = op - contextStart;
+      } else if (op >= defaultStart && op <= vm_TeOpcodeEx4.VM_OP4_NUM_USHR_DEFAULT) {
+        family = 'default'; index = op - defaultStart;
+      } else {
+        const unaryExtras: Record<number, ['boundary' | 'default', string]> = {
+          [vm_TeOpcodeEx4.VM_OP4_NUM_PLUS_CONTEXT]: ['boundary', '+'],
+          [vm_TeOpcodeEx4.VM_OP4_NUM_INC_CONTEXT]: ['boundary', '++'],
+          [vm_TeOpcodeEx4.VM_OP4_NUM_DEC_CONTEXT]: ['boundary', '--'],
+          [vm_TeOpcodeEx4.VM_OP4_NUM_PLUS_DEFAULT]: ['default', '+'],
+          [vm_TeOpcodeEx4.VM_OP4_NUM_INC_DEFAULT]: ['default', '++'],
+          [vm_TeOpcodeEx4.VM_OP4_NUM_DEC_DEFAULT]: ['default', '--'],
+        };
+        const extra = unaryExtras[op];
+        if (!extra) return unexpected();
+        const [mode, operator] = extra;
+        if (mode === 'default' && type.kind !== 'float') return invalidOperation('Default numeric opcode requires a float descriptor');
+        return {
+          operation: {
+            opcode: 'NumericUnOp',
+            operands: [
+              { type: 'OpOperand', subOperation: operator },
+              IL.numericTypeOperand(type, mode === 'boundary' ? 'boundary' : mode),
+            ],
+          } as any,
+          disassembly: `NumericUnOp(${operator}, ${name}${mode === 'default' ? ', default' : ''})`,
+        };
+      }
+
+      const operator = binaryAndUnaryNames[index];
+      const unary = index === 6 || index === 10;
+      if (family === 'default' && type.kind !== 'float') return invalidOperation('Default numeric opcode requires a float descriptor');
+      const ilOpcode = (unary
+        ? family === 'typed' ? 'NumericUnOpTyped' : 'NumericUnOp'
+        : family === 'typed' ? 'NumericBinOpTyped' : 'NumericBinOp') as IL.Opcode;
+      const mode = family === 'typed' ? undefined : family === 'boundary' ? 'boundary' : 'default';
+      return {
+        operation: {
+          opcode: ilOpcode,
+          operands: unary
+            ? [{ type: 'OpOperand', subOperation: operator }, IL.numericTypeOperand(type, mode)]
+            : [{ type: 'OpOperand', subOperation: operator }, IL.numericTypeOperand(type, mode)],
+        } as any,
+        disassembly: `${ilOpcode}(${operator}, ${name}${family === 'default' ? ', default' : ''})`,
+      };
+    }
+
     let x = buffer.readUInt8();
     const opcode: vm_TeOpcode = x >> 4;
     const param = x & 0xF;
@@ -1771,6 +1941,66 @@ export function decodeSnapshot(snapshot: Snapshot): { snapshotInfo: SnapshotIL, 
                   },
                   disassembly: `TypeCodeOf()`
                 }
+              }
+
+              case vm_TeOpcodeEx4.VM_OP4_NUM_ADD_TYPED:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_SUB_TYPED:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_MUL_TYPED:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_DIV_TYPED:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_REM_TYPED:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_POW_TYPED:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_NEG_TYPED:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_AND_TYPED:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_OR_TYPED:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_XOR_TYPED:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_NOT_TYPED:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_SHL_TYPED:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_SHR_TYPED:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_USHR_TYPED:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_CAST:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_ADD_CONTEXT:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_SUB_CONTEXT:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_MUL_CONTEXT:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_DIV_CONTEXT:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_REM_CONTEXT:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_POW_CONTEXT:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_NEG_CONTEXT:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_AND_CONTEXT:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_OR_CONTEXT:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_XOR_CONTEXT:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_NOT_CONTEXT:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_SHL_CONTEXT:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_SHR_CONTEXT:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_USHR_CONTEXT:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_PLUS_CONTEXT:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_INC_CONTEXT:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_DEC_CONTEXT:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_ADD_DEFAULT:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_SUB_DEFAULT:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_MUL_DEFAULT:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_DIV_DEFAULT:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_REM_DEFAULT:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_POW_DEFAULT:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_NEG_DEFAULT:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_AND_DEFAULT:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_OR_DEFAULT:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_XOR_DEFAULT:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_NOT_DEFAULT:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_SHL_DEFAULT:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_SHR_DEFAULT:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_USHR_DEFAULT:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_PLUS_DEFAULT:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_INC_DEFAULT:
+              case vm_TeOpcodeEx4.VM_OP4_NUM_DEC_DEFAULT: {
+                return decodeNumericExtended(subOp);
+              }
+
+              case vm_TeOpcodeEx4.VM_OP4_NUM_KIND: {
+                return { operation: { opcode: 'NumericKindOf', operands: [] }, disassembly: 'NumericKindOf' };
+              }
+
+              case vm_TeOpcodeEx4.VM_OP4_NUM_IS_INTEGER: {
+                return { operation: { opcode: 'NumericIsInteger', operands: [] }, disassembly: 'NumericIsInteger' };
               }
 
               case vm_TeOpcodeEx4.VM_OP4_END: {

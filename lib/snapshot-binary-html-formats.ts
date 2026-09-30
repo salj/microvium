@@ -79,7 +79,8 @@ class BinaryFormats {
   uInt32LE: BinaryFormat<number> = v => (UInt32(v), [v & 0xFF, (v >> 8) & 0xFF, (v >> 16) & 0xFF, (v >> 24) & 0xFF]);
   // Little-endian 32-bit signed integer
   sInt32LE: BinaryFormat<number> = v => (SInt32(v), [v & 0xFF, (v >> 8) & 0xFF, (v >> 16) & 0xFF, (v >> 24) & 0xFF]);
-  // Little-endian 64-bit floating point
+  // Little-endian IEEE-754 floating point
+  floatLE: BinaryFormat<number> = v => { const b = Buffer.allocUnsafe(4); b.writeFloatLE(v); return [...b] };
   doubleLE: BinaryFormat<number> = v => { const b = Buffer.allocUnsafe(8); b.writeDoubleLE(v); return [...b] };
   // UTF8, null-terminated string
   stringUtf8NT: BinaryFormat<string> = v => [...Buffer.from(v, 'utf8'), 0];
@@ -111,6 +112,7 @@ export const uHex32LERow = rowFormat(binaryFormats.uInt32LE, 4, renderHex(8));
 export const uInt32LERow = rowFormat(binaryFormats.uInt32LE, 4, renderInt);
 export const sInt32LERow = rowFormat(binaryFormats.sInt32LE, 4, renderInt);
 
+export const floatLERow = rowFormat(binaryFormats.floatLE, 4, renderDouble);
 export const doubleLERow = rowFormat(binaryFormats.doubleLE, 8, renderDouble);
 
 export const stringUtf8NTRow = rowFormat(binaryFormats.stringUtf8NT, 1, renderString);

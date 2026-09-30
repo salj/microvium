@@ -12,6 +12,7 @@ import escapeHTML from 'escape-html';
 import { vm_TeOpcode, vm_TeOpcodeEx1, vm_TeOpcodeEx2, vm_TeOpcodeEx3, vm_TeSmallLiteralValue, vm_TeNumberOp, vm_TeBitwiseOp, vm_TeOpcodeEx4 } from './bytecode-opcodes';
 import fs from 'fs';
 import { Referenceable, programAddressToKey } from './encode-snapshot';
+import { encodeNumericTypeDescriptor } from './numeric-types';
 
 /*
 writeFunctionBody is essentially concerned with the layout and emission of
@@ -395,6 +396,37 @@ class InstructionEmitter {
     return instructionPrimary(opcode1, opcode2, op);
   }
 
+  operationNumericBinOp(_ctx: InstructionEmitContext, op: IL.Operation, operator: string, typeOperand: IL.NumericTypeOperand) {
+    return numericOperationInstruction(op, operator as IL.BinOpCode, typeOperand, 'context');
+  }
+
+  operationNumericBinOpTyped(_ctx: InstructionEmitContext, op: IL.Operation, operator: string, typeOperand: IL.NumericTypeOperand) {
+    return numericOperationInstruction(op, operator as IL.BinOpCode, typeOperand, 'typed');
+  }
+
+  operationNumericUnOp(_ctx: InstructionEmitContext, op: IL.Operation, operator: string, typeOperand: IL.NumericTypeOperand) {
+    const prefix = typeOperand.contextMode === 'default' ? 'DEFAULT' : 'CONTEXT';
+    const opcode = numericUnaryOpcode(operator as IL.UnOpCode, prefix);
+    return numericInstruction(op, opcode, typeOperand.numericType);
+  }
+
+  operationNumericUnOpTyped(_ctx: InstructionEmitContext, op: IL.Operation, operator: string, typeOperand: IL.NumericTypeOperand) {
+    const opcode = numericUnaryOpcode(operator as IL.UnOpCode, 'TYPED');
+    return numericInstruction(op, opcode, typeOperand.numericType);
+  }
+
+  operationNumericCast(_ctx: InstructionEmitContext, op: IL.Operation, typeOperand: IL.NumericTypeOperand) {
+    return numericInstruction(op, vm_TeOpcodeEx4.VM_OP4_NUM_CAST, typeOperand.numericType);
+  }
+
+  operationNumericKindOf(_ctx: InstructionEmitContext, op: IL.Operation) {
+    return instructionEx4(vm_TeOpcodeEx4.VM_OP4_NUM_KIND, op);
+  }
+
+  operationNumericIsInteger(_ctx: InstructionEmitContext, op: IL.Operation) {
+    return instructionEx4(vm_TeOpcodeEx4.VM_OP4_NUM_IS_INTEGER, op);
+  }
+
   operationBranch(
     ctx: InstructionEmitContext,
     op: IL.Operation,
@@ -763,6 +795,7 @@ class InstructionEmitter {
         case 'NullValue': return vm_TeSmallLiteralValue.VM_SLV_NULL;
         case 'UndefinedValue': return vm_TeSmallLiteralValue.VM_SLV_UNDEFINED;
         case 'NumberValue':
+          if (param.numericType || typeof param.value !== 'number') return undefined;
           if (Object.is(param.value, -0)) return undefined;
           switch (param.value) {
             case -1: return vm_TeSmallLiteralValue.VM_SLV_INT_MINUS_1;
@@ -953,7 +986,9 @@ class InstructionEmitter {
   }
 
   operationUnOp(_ctx: InstructionEmitContext, op: IL.OtherOperation, param: IL.UnOpCode) {
-    const [opcode1, opcode2] = ilUnOpCodeToVm[param];
+    const encoding = ilUnOpCodeToVm[param];
+    if (!encoding) return invalidOperation(`No legacy unary opcode for ${param}`);
+    const [opcode1, opcode2] = encoding;
     return instructionPrimary(opcode1, opcode2, op);
   }
 
@@ -1048,6 +1083,47 @@ function appendInstructionEx4(region: BinaryRegion, opcode: vm_TeOpcodeEx4, op: 
 
 function instructionEx4(opcode: vm_TeOpcodeEx4, op: IL.Operation): InstructionWriter {
   return fixedSizeInstruction(2, r => appendInstructionEx4(r, opcode, op));
+}
+
+function numericOperationInstruction(
+  op: IL.Operation,
+  operator: IL.BinOpCode,
+  typeOperand: IL.NumericTypeOperand,
+  form: 'typed' | 'context',
+): InstructionWriter {
+  const family: 'TYPED' | 'DEFAULT' | 'CONTEXT' = form === 'typed'
+    ? 'TYPED'
+    : typeOperand.contextMode === 'default' ? 'DEFAULT' : 'CONTEXT';
+  const opcode = numericBinaryOpcode(operator, family);
+  return numericInstruction(op, opcode, typeOperand.numericType);
+}
+
+function numericBinaryOpcode(operator: IL.BinOpCode, family: 'TYPED' | 'CONTEXT' | 'DEFAULT'): vm_TeOpcodeEx4 {
+  const map: Record<string, string> = {
+    '+': 'ADD', '-': 'SUB', '*': 'MUL', '/': 'DIV', '%': 'REM', '**': 'POW',
+    '&': 'AND', '|': 'OR', '^': 'XOR', '<<': 'SHL', '>>': 'SHR', '>>>': 'USHR',
+  };
+  const mnemonic = map[operator];
+  if (!mnemonic) return invalidOperation(`No specialized numeric opcode for ${operator}`);
+  return (vm_TeOpcodeEx4 as any)[`VM_OP4_NUM_${mnemonic}_${family}`] as vm_TeOpcodeEx4;
+}
+
+function numericUnaryOpcode(operator: IL.UnOpCode, family: 'TYPED' | 'CONTEXT' | 'DEFAULT'): vm_TeOpcodeEx4 {
+  const mnemonic = operator === '-' ? 'NEG' : operator === '+' ? 'PLUS' : operator === '~' ? 'NOT'
+    : operator === '++' ? 'INC' : operator === '--' ? 'DEC' : undefined;
+  if (!mnemonic) return invalidOperation(`No specialized numeric unary opcode for ${operator}`);
+  if (family === 'TYPED' && mnemonic === 'PLUS') return vm_TeOpcodeEx4.VM_OP4_NUM_CAST;
+  return (vm_TeOpcodeEx4 as any)[`VM_OP4_NUM_${mnemonic}_${family}`] as vm_TeOpcodeEx4;
+}
+
+function numericInstruction(op: IL.Operation, opcode: vm_TeOpcodeEx4, type: IL.NumericType): InstructionWriter {
+  return customInstruction(
+    op,
+    vm_TeOpcode.VM_OP_EXTENDED_2,
+    vm_TeOpcodeEx2.VM_OP2_EXTENDED_4,
+    { type: 'UInt8', value: opcode },
+    { type: 'UInt8', value: encodeNumericTypeDescriptor(type) },
+  );
 }
 
 type InstructionPayloadPart =
@@ -1147,7 +1223,7 @@ const instructionNotImplementedFormat: Format<Labelled<undefined>> = {
   htmlFormat: formats.tableRow(() => 'Instruction not implemented')
 }
 
-const ilUnOpCodeToVm: Record<IL.UnOpCode, [vm_TeOpcode, vm_TeOpcodeEx1 | vm_TeNumberOp | vm_TeBitwiseOp]> = {
+const ilUnOpCodeToVm: Partial<Record<IL.UnOpCode, [vm_TeOpcode, vm_TeOpcodeEx1 | vm_TeNumberOp | vm_TeBitwiseOp]>> = {
   ["-"]: [vm_TeOpcode.VM_OP_NUM_OP    , vm_TeNumberOp.VM_NUM_OP_NEGATE    ],
   ["+"]: [vm_TeOpcode.VM_OP_NUM_OP    , vm_TeNumberOp.VM_NUM_OP_UNARY_PLUS],
   ["!"]: [vm_TeOpcode.VM_OP_EXTENDED_1, vm_TeOpcodeEx1.VM_OP1_LOGICAL_NOT ],
@@ -1247,6 +1323,11 @@ function resolveOperand(operand: IL.Operand, expectedType: IL.OperandType) {
         return invalidOperation('Expected sub-operation operand');
       }
       return operand.subOperation;
+    case 'NumericTypeOperand':
+      if (operand.type !== 'NumericTypeOperand') {
+        return invalidOperation('Expected numeric type operand');
+      }
+      return operand;
     case 'FlagOperand':
       if (operand.type !== 'FlagOperand') {
         return invalidOperation('Expected flag operand');

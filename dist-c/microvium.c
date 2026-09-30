@@ -195,7 +195,7 @@ typedef struct mvm_TsBytecodeHeader { // Size = 12B + sectionOffsets
   uint8_t bytecodeVersion; // MVM_ENGINE_MAJOR_VERSION
   uint8_t headerSize;
   uint8_t requiredEngineVersion; // MVM_ENGINE_MINOR_VERSION
-  uint8_t reserved; // =0
+  uint8_t numericOptions;
 
   uint16_t bytecodeSize; // Including header
   uint16_t crc; // CCITT16 (header and data, of everything after the CRC)
@@ -212,7 +212,11 @@ typedef struct mvm_TsBytecodeHeader { // Size = 12B + sectionOffsets
 
 typedef enum mvm_TeFeatureFlags {
   FF_FLOAT_SUPPORT = 0,
+  /* bit 1 is compiler overflow-check metadata */
+  FF_NUMERIC_TYPES = 2,
 } mvm_TeFeatureFlags;
+
+#define MVM_NUMERIC_OPTION_DEFAULT_F32 0x01u
 
 typedef struct vm_TsExportTableEntry {
   mvm_VMExportID exportID;
@@ -317,7 +321,7 @@ Operation groups and their corresponding preparation logic
     - Prep pops one or two values off the stack and reads them into reg1 and
       reg2 respectively. The choice of 1 or 2 depends on the sub-range. If
       popping one value, the second is left as zero.
-    - Prep unpacks to either int32 or float64 depending on the corresponding
+    - Prep unpacks to either int32 or float depending on the corresponding
       data types.
     - The operations can dispatch to a different tail/follow through routine
       depending on whether they overflow or not.
@@ -500,6 +504,63 @@ typedef enum vm_TeOpcodeEx4 {
   VM_OP4_ENQUEUE_JOB         = 0x0C, // (No literal operands)
   VM_OP4_ASYNC_COMPLETE      = 0x0D, // (No literal operands)
 
+  // Typed numeric operations. These are followed by one numeric descriptor.
+  VM_OP4_NUM_ADD_TYPED       = 0x0E,
+  VM_OP4_NUM_SUB_TYPED,
+  VM_OP4_NUM_MUL_TYPED,
+  VM_OP4_NUM_DIV_TYPED,
+  VM_OP4_NUM_REM_TYPED,
+  VM_OP4_NUM_POW_TYPED,
+  VM_OP4_NUM_NEG_TYPED,
+  VM_OP4_NUM_AND_TYPED,
+  VM_OP4_NUM_OR_TYPED,
+  VM_OP4_NUM_XOR_TYPED,
+  VM_OP4_NUM_NOT_TYPED,
+  VM_OP4_NUM_SHL_TYPED,
+  VM_OP4_NUM_SHR_TYPED,
+  VM_OP4_NUM_USHR_TYPED,
+  VM_OP4_NUM_CAST,
+  VM_OP4_NUM_KIND,
+  VM_OP4_NUM_IS_INTEGER,
+
+  // Numeric operations using an explicit boundary context.
+  VM_OP4_NUM_ADD_CONTEXT,
+  VM_OP4_NUM_SUB_CONTEXT,
+  VM_OP4_NUM_MUL_CONTEXT,
+  VM_OP4_NUM_DIV_CONTEXT,
+  VM_OP4_NUM_REM_CONTEXT,
+  VM_OP4_NUM_POW_CONTEXT,
+  VM_OP4_NUM_NEG_CONTEXT,
+  VM_OP4_NUM_AND_CONTEXT,
+  VM_OP4_NUM_OR_CONTEXT,
+  VM_OP4_NUM_XOR_CONTEXT,
+  VM_OP4_NUM_NOT_CONTEXT,
+  VM_OP4_NUM_SHL_CONTEXT,
+  VM_OP4_NUM_SHR_CONTEXT,
+  VM_OP4_NUM_USHR_CONTEXT,
+  VM_OP4_NUM_PLUS_CONTEXT,
+  VM_OP4_NUM_INC_CONTEXT,
+  VM_OP4_NUM_DEC_CONTEXT,
+
+  // File-default float context. Ordinary results remain ordinary Numbers.
+  VM_OP4_NUM_ADD_DEFAULT,
+  VM_OP4_NUM_SUB_DEFAULT,
+  VM_OP4_NUM_MUL_DEFAULT,
+  VM_OP4_NUM_DIV_DEFAULT,
+  VM_OP4_NUM_REM_DEFAULT,
+  VM_OP4_NUM_POW_DEFAULT,
+  VM_OP4_NUM_NEG_DEFAULT,
+  VM_OP4_NUM_AND_DEFAULT,
+  VM_OP4_NUM_OR_DEFAULT,
+  VM_OP4_NUM_XOR_DEFAULT,
+  VM_OP4_NUM_NOT_DEFAULT,
+  VM_OP4_NUM_SHL_DEFAULT,
+  VM_OP4_NUM_SHR_DEFAULT,
+  VM_OP4_NUM_USHR_DEFAULT,
+  VM_OP4_NUM_PLUS_DEFAULT,
+  VM_OP4_NUM_INC_DEFAULT,
+  VM_OP4_NUM_DEC_DEFAULT,
+
 
   VM_OP4_END
 } vm_TeOpcodeEx4;
@@ -507,7 +568,7 @@ typedef enum vm_TeOpcodeEx4 {
 
 // Number operations. These are operations which take one or two arguments from
 // the stack and coerce them to numbers. Each of these will have two
-// implementations: one for 32-bit int, and one for 64-bit float.
+// implementations: one for 32-bit int, and one for the configured floating-point width.
 typedef enum vm_TeNumberOp {
 
   // (number, number) -> boolean
@@ -596,8 +657,14 @@ typedef enum vm_TeSmallLiteralValue {
 #define MVM_NATIVE_POINTER_IS_16_BIT 0
 #endif
 
-#ifndef MVM_FLOAT64_NAN
-#define MVM_FLOAT64_NAN ((MVM_FLOAT64)(INFINITY * 0.0))
+#if MVM_SUPPORT_FLOAT
+  #ifndef MVM_FLOAT_NAN
+    #define MVM_FLOAT_NAN ((double)(INFINITY * 0.0))
+  #endif
+  #define MVM_FLOAT32_FMOD(a, b) fmodf((a), (b))
+  #define MVM_FLOAT64_FMOD(a, b) fmod((a), (b))
+  #define MVM_FLOAT32_POW(a, b) powf((a), (b))
+  #define MVM_FLOAT64_POW(a, b) pow((a), (b))
 #endif
 
 #ifndef MVM_SAFE_MODE
@@ -1162,7 +1229,7 @@ typedef enum TeTypeCode {
   TC_REF_TOMBSTONE          = 0x0,
 
   TC_REF_INT32              = 0x1, // 32-bit signed integer
-  TC_REF_FLOAT64            = 0x2, // 64-bit float
+  TC_REF_NUMBER            = 0x2, // ordinary or explicitly flavored Number
 
   /**
    * UTF8-encoded string that may or may not be unique.
@@ -1501,6 +1568,11 @@ struct mvm_VM {
 
   void* context;
 
+  // Numeric snapshot semantics. Minor-0 snapshots leave numericTypes clear and
+  // keep the original raw-f64 representation.
+  bool numericTypes;
+  uint8_t defaultFloatWidth;
+
   #if MVM_INCLUDE_DEBUG_CAPABILITY
   TsBreakpoint* pBreakpoints;
   mvm_TfBreakpointCallback breakpointCallback;
@@ -1524,6 +1596,29 @@ struct mvm_VM {
   uint8_t gc_potentialCycleNumber;
   #endif // MVM_SAFE_MODE
 };
+
+typedef enum vm_TeNumericClass {
+  VM_NUM_ORDINARY,
+  VM_NUM_SIGNED,
+  VM_NUM_UNSIGNED,
+  VM_NUM_FLOAT,
+} vm_TeNumericClass;
+
+typedef struct vm_TsNumericType {
+  vm_TeNumericClass kind;
+  uint8_t width;
+} vm_TsNumericType;
+
+typedef struct vm_TsNumeric {
+  vm_TeNumericClass kind;
+  uint8_t width;
+  union {
+    int64_t i;
+    uint64_t u;
+    float f32;
+    double f64;
+  } value;
+} vm_TsNumeric;
 
 typedef struct TsInternedStringCell {
   ShortPtr spNext;
@@ -1710,6 +1805,16 @@ static void toInternedString(VM* vm, Value* pValue);
 static uint16_t vm_stringSizeUtf8(VM* vm, Value str);
 static bool vm_ramStringIsNonNegativeInteger(VM* vm, Value str);
 static TeError toInt32Internal(mvm_VM* vm, Value value, int32_t* out_result);
+static TeError vm_readNumeric(VM* vm, Value value, vm_TsNumeric* out);
+static double vm_numericAsDouble(const vm_TsNumeric* value);
+static TeError vm_writeNumeric(VM* vm, const vm_TsNumeric* value, Value* out);
+static TeError vm_numericBinary(VM* vm, vm_TeNumberOp op, const vm_TsNumeric* a, const vm_TsNumeric* b, const vm_TsNumericType* context, vm_TsNumeric* out);
+static TeError vm_numericBitwise(VM* vm, vm_TeBitwiseOp op, const vm_TsNumeric* a, const vm_TsNumeric* b, vm_TsNumeric* out);
+static TeError vm_numericUnary(VM* vm, vm_TeNumberOp op, const vm_TsNumeric* value, const vm_TsNumericType* context, vm_TsNumeric* out);
+static TeError vm_numericCast(VM* vm, const vm_TsNumeric* value, vm_TsNumericType target, vm_TsNumeric* out);
+static int vm_compareNumericExact(VM* vm, const vm_TsNumeric* a, const vm_TsNumeric* b);
+static TeError vm_numericBytecode(VM* vm, uint8_t opcode, uint8_t descriptor, Value* left, Value* right, Value* result, uint8_t* popCount);
+static bool vm_isNumberType(TeTypeCode type);
 static inline uint16_t vm_getAllocationSizeExcludingHeaderFromHeaderWord(uint16_t headerWord);
 static inline LongPtr LongPtr_add(LongPtr lp, int16_t offset);
 static inline uint16_t LongPtr_read2_aligned(LongPtr lp);
@@ -1843,7 +1948,7 @@ static const uint8_t typeStringOffsetByType[VM_T_END] = {
 static const uint8_t typeByTC[TC_END] = {
   VM_T_END,         /* TC_REF_TOMBSTONE          */
   VM_T_NUMBER,      /* TC_REF_INT32              */
-  VM_T_NUMBER,      /* TC_REF_FLOAT64            */
+  VM_T_NUMBER,      /* TC_REF_NUMBER           */
   VM_T_STRING,      /* TC_REF_STRING             */
   VM_T_STRING,      /* TC_REF_INTERNED_STRING    */
   VM_T_FUNCTION,    /* TC_REF_FUNCTION           */
@@ -1874,7 +1979,7 @@ static const uint8_t typeByTC[TC_END] = {
   (type*)mvm_allocateWithConstantHeader(vm, vm_makeHeaderWord(vm, typeCode, sizeof (type)), 2 + sizeof (type))
 
 #if MVM_SUPPORT_FLOAT
-static int32_t mvm_float64ToInt32(MVM_FLOAT64 value);
+static int32_t mvm_floatToInt32(MVM_FLOAT64 value);
 #endif
 
 #if MVM_VERY_EXPENSIVE_MEMORY_CHECKS
@@ -1919,11 +2024,11 @@ static int32_t mvm_float64ToInt32(MVM_FLOAT64 value);
  * signed integers in C.
  *
  * Explanation: Microvium tries to use 32-bit integer arithmetic where possible,
- * because it's more efficient than the standard 64-bit floating point
+ * because it's more efficient than the configured floating point
  * operations, especially on small microcontrollers. To give the appearance of
- * 64-bit floating point, Microvium needs to check when the result of such
+ * floating point, Microvium needs to check when the result of such
  * operations overflows the 32-bit range and needs to be re-calculated using
- * proper 64-bit floating point operations. These overflow checks can be
+ * proper floating point operations. These overflow checks can be
  * disabled to improve performance and reduce engine size.
  *
  * Example: `2_000_000_000 + 2_000_000_000` will add to:
@@ -2565,6 +2670,43 @@ SUB_CALL_SHORT: {
 /*     reg2: first popped operand                                            */
 /* ------------------------------------------------------------------------- */
 SUB_OP_BIT_OP: {
+  reg3 = reg1;
+  if (vm->numericTypes) {
+    Value leftValue = reg3 < VM_BIT_OP_DIVIDER_2 ? pStackPointer[-1] : reg2;
+    Value rightValue = reg2;
+    vm_TsNumeric leftNumber, rightNumber, resultNumber;
+    TeError leftErr = vm_readNumeric(vm, leftValue, &leftNumber);
+    TeError rightErr = reg3 < VM_BIT_OP_DIVIDER_2
+      ? vm_readNumeric(vm, rightValue, &rightNumber)
+      : MVM_E_SUCCESS;
+    if (reg3 >= VM_BIT_OP_DIVIDER_2 && leftErr == MVM_E_SUCCESS) rightNumber = leftNumber;
+    bool hasTypedOperand = (leftErr == MVM_E_SUCCESS && leftNumber.kind != VM_NUM_ORDINARY) ||
+      (reg3 < VM_BIT_OP_DIVIDER_2 && rightErr == MVM_E_SUCCESS && rightNumber.kind != VM_NUM_ORDINARY);
+    if (hasTypedOperand && leftErr == MVM_E_SUCCESS && rightErr == MVM_E_SUCCESS) {
+      if (reg3 < VM_BIT_OP_DIVIDER_2) (void)POP();
+      err = vm_numericBitwise(vm, (vm_TeBitwiseOp)reg3, &leftNumber, &rightNumber, &resultNumber);
+      if (err != MVM_E_SUCCESS) {
+        err = vm_newError(vm, err == MVM_E_INVALID_BYTECODE ? err : MVM_E_NUMERIC_ERROR);
+        goto SUB_EXIT;
+      }
+      Value numericResult;
+      FLUSH_REGISTER_CACHE();
+      err = vm_writeNumeric(vm, &resultNumber, &numericResult);
+      CACHE_REGISTERS();
+      if (err != MVM_E_SUCCESS) {
+        err = vm_newError(vm, err == MVM_E_INVALID_BYTECODE ? err : MVM_E_NUMERIC_ERROR);
+        goto SUB_EXIT;
+      }
+      reg1 = numericResult;
+      goto SUB_TAIL_POP_0_PUSH_REG1;
+    }
+    if ((leftErr != MVM_E_SUCCESS && leftErr != MVM_E_NUMERIC_ERROR) ||
+        (rightErr != MVM_E_SUCCESS && rightErr != MVM_E_NUMERIC_ERROR)) {
+      err = vm_newError(vm, MVM_E_INVALID_BYTECODE);
+      goto SUB_EXIT;
+    }
+  }
+
   int32_t reg1I = 0;
   int32_t reg2I = 0;
   int8_t reg2B = 0;
@@ -2609,9 +2751,19 @@ SUB_OP_BIT_OP: {
         // extended to floats.
         // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Bitwise_Operators#Signed_32-bit_integers
         if ((reg2B == 0) & (reg1I < 0)) {
+          vm_TsNumeric numericResultData;
+          Value numericResult;
+          memset(&numericResultData, 0, sizeof numericResultData);
+          numericResultData.kind = VM_NUM_ORDINARY;
+          numericResultData.value.f64 = (double)(uint32_t)reg1I;
           FLUSH_REGISTER_CACHE();
-          reg1 = mvm_newNumber(vm, (MVM_FLOAT64)((uint32_t)reg1I));
+          err = vm_writeNumeric(vm, &numericResultData, &numericResult);
           CACHE_REGISTERS();
+          if (err != MVM_E_SUCCESS) {
+            err = vm_newError(vm, err);
+            goto SUB_EXIT;
+          }
+          reg1 = numericResult;
           goto SUB_TAIL_POP_0_PUSH_REG1;
         }
       #endif // MVM_PORT_INT32_OVERFLOW_CHECKS
@@ -3038,20 +3190,57 @@ SUB_OP_SCOPE_PUSH_OR_NEW: {
 SUB_OP_NUM_OP: {
   CODE_COVERAGE(25); // Hit
 
+  reg3 = reg1;
+  if (reg3 < VM_NUM_OP_DIVIDER) reg1 = POP();
+  else reg1 = 0;
+
+  if (vm->numericTypes) {
+    vm_TsNumeric left, right, result;
+    TeError leftErr = reg3 < VM_NUM_OP_DIVIDER ? vm_readNumeric(vm, reg1, &left) : MVM_E_SUCCESS;
+    TeError rightErr = vm_readNumeric(vm, reg2, &right);
+    if (leftErr == MVM_E_SUCCESS && rightErr == MVM_E_SUCCESS &&
+        !(reg3 == VM_NUM_OP_DIVIDE_AND_TRUNC && left.kind == VM_NUM_ORDINARY && right.kind == VM_NUM_ORDINARY)) {
+      if (reg3 < VM_NUM_OP_DIVIDER) err = vm_numericBinary(vm, (vm_TeNumberOp)reg3, &left, &right, NULL, &result);
+      else err = vm_numericUnary(vm, (vm_TeNumberOp)reg3, &right, NULL, &result);
+      if (err != MVM_E_SUCCESS) {
+        err = vm_newError(vm, err == MVM_E_INVALID_BYTECODE ? err : MVM_E_NUMERIC_ERROR);
+        goto SUB_EXIT;
+      }
+      if (reg3 <= VM_NUM_OP_GREATER_EQUAL) {
+        reg1 = result.value.u ? VM_VALUE_TRUE : VM_VALUE_FALSE;
+      } else {
+        Value numericResult;
+        FLUSH_REGISTER_CACHE();
+        err = vm_writeNumeric(vm, &result, &numericResult);
+        CACHE_REGISTERS();
+        if (err != MVM_E_SUCCESS) {
+          err = vm_newError(vm, err == MVM_E_INVALID_BYTECODE ? err : MVM_E_NUMERIC_ERROR);
+          goto SUB_EXIT;
+        }
+        reg1 = numericResult;
+      }
+      goto SUB_TAIL_POP_0_PUSH_REG1;
+    }
+    if ((leftErr != MVM_E_SUCCESS && leftErr != MVM_E_NUMERIC_ERROR) ||
+        (rightErr != MVM_E_SUCCESS && rightErr != MVM_E_NUMERIC_ERROR)) {
+      err = vm_newError(vm, MVM_E_INVALID_BYTECODE);
+      goto SUB_EXIT;
+    }
+    // Preserve legacy coercions for generic non-number operations. Numeric IL
+    // instructions added in the next bytecode revision reject these values.
+  }
+
   int32_t reg1I = 0;
   int32_t reg2I = 0;
-
-  reg3 = reg1;
 
   // If it's a binary operator, then we pop a second operand
   if (reg3 < VM_NUM_OP_DIVIDER) {
     CODE_COVERAGE(440); // Hit
-    reg1 = POP();
 
     if (toInt32Internal(vm, reg1, &reg1I) != MVM_E_SUCCESS) {
       CODE_COVERAGE(444); // Hit
       #if MVM_SUPPORT_FLOAT
-      goto SUB_NUM_OP_FLOAT64;
+      goto SUB_NUM_OP_FLOAT;
       #endif // MVM_SUPPORT_FLOAT
     } else {
       CODE_COVERAGE(445); // Hit
@@ -3066,7 +3255,7 @@ SUB_OP_NUM_OP: {
     CODE_COVERAGE(442); // Hit
     // If we failed to convert to int32, then we need to process the operation as a float
     #if MVM_SUPPORT_FLOAT
-    goto SUB_NUM_OP_FLOAT64;
+    goto SUB_NUM_OP_FLOAT;
     #endif // MVM_SUPPORT_FLOAT
   } else {
     CODE_COVERAGE(443); // Hit
@@ -3099,12 +3288,12 @@ SUB_OP_NUM_OP: {
       #if MVM_SUPPORT_FLOAT && MVM_PORT_INT32_OVERFLOW_CHECKS
         #if __has_builtin(__builtin_add_overflow)
           if (__builtin_add_overflow(reg1I, reg2I, &reg1I)) {
-            goto SUB_NUM_OP_FLOAT64;
+            goto SUB_NUM_OP_FLOAT;
           }
         #else // No builtin overflow
           int32_t result = reg1I + reg2I;
           // Check overflow https://blog.regehr.org/archives/1139
-          if (((reg1I ^ result) & (reg2I ^ result)) < 0) goto SUB_NUM_OP_FLOAT64;
+          if (((reg1I ^ result) & (reg2I ^ result)) < 0) goto SUB_NUM_OP_FLOAT;
           reg1I = result;
         #endif // No builtin overflow
       #else // No overflow checks
@@ -3117,13 +3306,13 @@ SUB_OP_NUM_OP: {
       #if MVM_SUPPORT_FLOAT && MVM_PORT_INT32_OVERFLOW_CHECKS
         #if __has_builtin(__builtin_sub_overflow)
           if (__builtin_sub_overflow(reg1I, reg2I, &reg1I)) {
-            goto SUB_NUM_OP_FLOAT64;
+            goto SUB_NUM_OP_FLOAT;
           }
         #else // No builtin overflow
           reg2I = -reg2I;
           int32_t result = reg1I + reg2I;
           // Check overflow https://blog.regehr.org/archives/1139
-          if (((reg1I ^ result) & (reg2I ^ result)) < 0) goto SUB_NUM_OP_FLOAT64;
+          if (((reg1I ^ result) & (reg2I ^ result)) < 0) goto SUB_NUM_OP_FLOAT;
           reg1I = result;
         #endif // No builtin overflow
       #else // No overflow checks
@@ -3136,7 +3325,7 @@ SUB_OP_NUM_OP: {
       #if MVM_SUPPORT_FLOAT && MVM_PORT_INT32_OVERFLOW_CHECKS
         #if __has_builtin(__builtin_mul_overflow)
           if (__builtin_mul_overflow(reg1I, reg2I, &reg1I)) {
-            goto SUB_NUM_OP_FLOAT64;
+            goto SUB_NUM_OP_FLOAT;
           }
         #else // No builtin overflow
           // There isn't really an efficient way to determine multiplied
@@ -3147,7 +3336,7 @@ SUB_OP_NUM_OP: {
           if (Value_isVirtualInt14(reg1) && Value_isVirtualInt14(reg2)) {
             reg1I = reg1I * reg2I;
           } else {
-            goto SUB_NUM_OP_FLOAT64;
+            goto SUB_NUM_OP_FLOAT;
           }
         #endif // No builtin overflow
       #else // No overflow checks
@@ -3162,7 +3351,7 @@ SUB_OP_NUM_OP: {
         // performs integer division instead of floating point division, so
         // this instruction is always the case where they're doing floating
         // point division.
-        goto SUB_NUM_OP_FLOAT64;
+        goto SUB_NUM_OP_FLOAT;
       #else // !MVM_SUPPORT_FLOAT
         err = vm_newError(vm, MVM_E_OPERATION_REQUIRES_FLOAT_SUPPORT);
         goto SUB_EXIT;
@@ -3192,7 +3381,7 @@ SUB_OP_NUM_OP: {
       CODE_COVERAGE(88); // Hit
       #if MVM_SUPPORT_FLOAT
         // Maybe in future we can we implement an integer version.
-        goto SUB_NUM_OP_FLOAT64;
+        goto SUB_NUM_OP_FLOAT;
       #else // !MVM_SUPPORT_FLOAT
         err = vm_newError(vm, MVM_E_OPERATION_REQUIRES_FLOAT_SUPPORT);
         goto SUB_EXIT;
@@ -3202,7 +3391,7 @@ SUB_OP_NUM_OP: {
       CODE_COVERAGE(89); // Hit
       #if MVM_SUPPORT_FLOAT && MVM_PORT_INT32_OVERFLOW_CHECKS
         // Note: Zero negates to negative zero, which is not representable as an int32
-        if ((reg2I == INT32_MIN) || (reg2I == 0)) goto SUB_NUM_OP_FLOAT64;
+        if ((reg2I == INT32_MIN) || (reg2I == 0)) goto SUB_NUM_OP_FLOAT;
       #endif
         reg1I = -reg2I;
       break;
@@ -3828,7 +4017,7 @@ SUB_OP_EXTENDED_3: {
 /*     reg1: The Ex-4 instruction opcode                                     */
 /* ------------------------------------------------------------------------- */
 SUB_OP_EXTENDED_4: {
-  MVM_SWITCH(reg1, (VM_NUM_OP4_END - 1)) {
+  MVM_SWITCH(reg1, (VM_OP4_END - 1)) {
 
 /* ------------------------------------------------------------------------- */
 /*                             VM_OP4_START_TRY                              */
@@ -4085,6 +4274,77 @@ SUB_OP_EXTENDED_4: {
       CODE_COVERAGE(697); // Hit
 
       goto SUB_ASYNC_COMPLETE;
+    }
+
+    MVM_CASE(VM_OP4_NUM_KIND):
+    MVM_CASE(VM_OP4_NUM_IS_INTEGER): {
+      reg3 = reg1;
+      Value numericResult;
+      uint8_t numericPopCount;
+      FLUSH_REGISTER_CACHE();
+      err = vm_numericBytecode(vm, (uint8_t)reg3, 0, reg->pStackPointer - 1, NULL, &numericResult, &numericPopCount);
+      CACHE_REGISTERS();
+      if (err != MVM_E_SUCCESS) {
+        err = vm_newError(vm, err == MVM_E_INVALID_BYTECODE ? err : MVM_E_NUMERIC_ERROR);
+        goto SUB_EXIT;
+      }
+      reg1 = numericResult;
+      goto SUB_TAIL_POP_1_PUSH_REG1;
+    }
+
+    MVM_CASE(VM_OP4_NUM_ADD_TYPED): MVM_CASE(VM_OP4_NUM_SUB_TYPED):
+    MVM_CASE(VM_OP4_NUM_MUL_TYPED): MVM_CASE(VM_OP4_NUM_DIV_TYPED):
+    MVM_CASE(VM_OP4_NUM_REM_TYPED): MVM_CASE(VM_OP4_NUM_POW_TYPED):
+    MVM_CASE(VM_OP4_NUM_NEG_TYPED): MVM_CASE(VM_OP4_NUM_AND_TYPED):
+    MVM_CASE(VM_OP4_NUM_OR_TYPED): MVM_CASE(VM_OP4_NUM_XOR_TYPED):
+    MVM_CASE(VM_OP4_NUM_NOT_TYPED): MVM_CASE(VM_OP4_NUM_SHL_TYPED):
+    MVM_CASE(VM_OP4_NUM_SHR_TYPED): MVM_CASE(VM_OP4_NUM_USHR_TYPED):
+    MVM_CASE(VM_OP4_NUM_CAST):
+    MVM_CASE(VM_OP4_NUM_ADD_CONTEXT): MVM_CASE(VM_OP4_NUM_SUB_CONTEXT):
+    MVM_CASE(VM_OP4_NUM_MUL_CONTEXT): MVM_CASE(VM_OP4_NUM_DIV_CONTEXT):
+    MVM_CASE(VM_OP4_NUM_REM_CONTEXT): MVM_CASE(VM_OP4_NUM_POW_CONTEXT):
+    MVM_CASE(VM_OP4_NUM_NEG_CONTEXT): MVM_CASE(VM_OP4_NUM_AND_CONTEXT):
+    MVM_CASE(VM_OP4_NUM_OR_CONTEXT): MVM_CASE(VM_OP4_NUM_XOR_CONTEXT):
+    MVM_CASE(VM_OP4_NUM_NOT_CONTEXT): MVM_CASE(VM_OP4_NUM_SHL_CONTEXT):
+    MVM_CASE(VM_OP4_NUM_SHR_CONTEXT): MVM_CASE(VM_OP4_NUM_USHR_CONTEXT):
+    MVM_CASE(VM_OP4_NUM_PLUS_CONTEXT): MVM_CASE(VM_OP4_NUM_INC_CONTEXT):
+    MVM_CASE(VM_OP4_NUM_DEC_CONTEXT):
+    MVM_CASE(VM_OP4_NUM_ADD_DEFAULT): MVM_CASE(VM_OP4_NUM_SUB_DEFAULT):
+    MVM_CASE(VM_OP4_NUM_MUL_DEFAULT): MVM_CASE(VM_OP4_NUM_DIV_DEFAULT):
+    MVM_CASE(VM_OP4_NUM_REM_DEFAULT): MVM_CASE(VM_OP4_NUM_POW_DEFAULT):
+    MVM_CASE(VM_OP4_NUM_NEG_DEFAULT): MVM_CASE(VM_OP4_NUM_AND_DEFAULT):
+    MVM_CASE(VM_OP4_NUM_OR_DEFAULT): MVM_CASE(VM_OP4_NUM_XOR_DEFAULT):
+    MVM_CASE(VM_OP4_NUM_NOT_DEFAULT): MVM_CASE(VM_OP4_NUM_SHL_DEFAULT):
+    MVM_CASE(VM_OP4_NUM_SHR_DEFAULT): MVM_CASE(VM_OP4_NUM_USHR_DEFAULT):
+    MVM_CASE(VM_OP4_NUM_PLUS_DEFAULT): MVM_CASE(VM_OP4_NUM_INC_DEFAULT):
+    MVM_CASE(VM_OP4_NUM_DEC_DEFAULT): {
+      reg3 = reg1;
+      Value numericResult;
+      uint8_t numericPopCount = 1;
+      bool isBinary =
+        ((reg3 >= VM_OP4_NUM_ADD_TYPED && reg3 <= VM_OP4_NUM_POW_TYPED) ||
+         (reg3 >= VM_OP4_NUM_AND_TYPED && reg3 <= VM_OP4_NUM_XOR_TYPED) ||
+         (reg3 >= VM_OP4_NUM_SHL_TYPED && reg3 <= VM_OP4_NUM_USHR_TYPED) ||
+         (reg3 >= VM_OP4_NUM_ADD_CONTEXT && reg3 <= VM_OP4_NUM_POW_CONTEXT) ||
+         (reg3 >= VM_OP4_NUM_AND_CONTEXT && reg3 <= VM_OP4_NUM_XOR_CONTEXT) ||
+         (reg3 >= VM_OP4_NUM_SHL_CONTEXT && reg3 <= VM_OP4_NUM_USHR_CONTEXT) ||
+         (reg3 >= VM_OP4_NUM_ADD_DEFAULT && reg3 <= VM_OP4_NUM_POW_DEFAULT) ||
+         (reg3 >= VM_OP4_NUM_AND_DEFAULT && reg3 <= VM_OP4_NUM_XOR_DEFAULT) ||
+         (reg3 >= VM_OP4_NUM_SHL_DEFAULT && reg3 <= VM_OP4_NUM_USHR_DEFAULT));
+      if (isBinary) numericPopCount = 2;
+      READ_PGM_1(reg2);
+      FLUSH_REGISTER_CACHE();
+      err = vm_numericBytecode(vm, (uint8_t)reg3, (uint8_t)reg2,
+        numericPopCount == 2 ? reg->pStackPointer - 2 : NULL,
+        reg->pStackPointer - 1, &numericResult, &numericPopCount);
+      CACHE_REGISTERS();
+      if (err != MVM_E_SUCCESS) {
+        err = vm_newError(vm, err == MVM_E_INVALID_BYTECODE ? err : MVM_E_NUMERIC_ERROR);
+        goto SUB_EXIT;
+      }
+      reg1 = numericResult;
+      if (numericPopCount == 2) goto SUB_TAIL_POP_2_PUSH_REG1;
+      goto SUB_TAIL_POP_1_PUSH_REG1;
     }
 
   } // End of switch inside SUB_OP_EXTENDED_4
@@ -4808,99 +5068,60 @@ SUB_CALL_BYTECODE_FUNC: {
 } // End of SUB_CALL_BYTECODE_FUNC
 
 /* ------------------------------------------------------------------------- */
-/*                             SUB_NUM_OP_FLOAT64                            */
+/*                             SUB_NUM_OP_FLOAT                            */
 /*   Expects:                                                                */
 /*     reg1: left operand (second pop), or zero for unary ops                */
 /*     reg2: right operand (first pop), or single operand for unary ops      */
 /*     reg3: vm_TeNumberOp                                                   */
 /* ------------------------------------------------------------------------- */
 #if MVM_SUPPORT_FLOAT
-SUB_NUM_OP_FLOAT64: {
+SUB_NUM_OP_FLOAT: {
   CODE_COVERAGE_UNIMPLEMENTED(447); // Hit
-
   MVM_FLOAT64 reg1F = 0;
-  if (reg1) reg1F = mvm_toFloat64(vm, reg1);
-  MVM_FLOAT64 reg2F = mvm_toFloat64(vm, reg2);
+  if (reg3 < VM_NUM_OP_DIVIDER) {
+    int32_t intValue;
+    TeError conversionErr = toInt32Internal(vm, reg1, &intValue);
+    if (conversionErr == MVM_E_SUCCESS) reg1F = intValue;
+    else if (conversionErr == MVM_E_NAN) reg1F = MVM_FLOAT_NAN;
+    else if (conversionErr == MVM_E_NEG_ZERO) reg1F = MVM_FLOAT_NEG_ZERO;
+    else reg1F = mvm_toFloat64(vm, reg1);
+  }
+  int32_t intValue;
+  TeError conversionErr = toInt32Internal(vm, reg2, &intValue);
+  MVM_FLOAT64 reg2F;
+  if (conversionErr == MVM_E_SUCCESS) reg2F = intValue;
+  else if (conversionErr == MVM_E_NAN) reg2F = MVM_FLOAT_NAN;
+  else if (conversionErr == MVM_E_NEG_ZERO) reg2F = MVM_FLOAT_NEG_ZERO;
+  else reg2F = mvm_toFloat64(vm, reg2);
 
   VM_ASSERT(vm, reg3 < VM_NUM_OP_END);
   MVM_SWITCH (reg3, (VM_NUM_OP_END - 1)) {
-    MVM_CASE(VM_NUM_OP_LESS_THAN): {
-      CODE_COVERAGE(449); // Hit
-      reg1 = reg1F < reg2F;
-      goto SUB_TAIL_PUSH_REG1_BOOL;
-    }
-    MVM_CASE(VM_NUM_OP_GREATER_THAN): {
-      CODE_COVERAGE(450); // Hit
-      reg1 = reg1F > reg2F;
-      goto SUB_TAIL_PUSH_REG1_BOOL;
-    }
-    MVM_CASE(VM_NUM_OP_LESS_EQUAL): {
-      CODE_COVERAGE(451); // Hit
-      reg1 = reg1F <= reg2F;
-      goto SUB_TAIL_PUSH_REG1_BOOL;
-    }
-    MVM_CASE(VM_NUM_OP_GREATER_EQUAL): {
-      CODE_COVERAGE(452); // Hit
-      reg1 = reg1F >= reg2F;
-      goto SUB_TAIL_PUSH_REG1_BOOL;
-    }
-    MVM_CASE(VM_NUM_OP_ADD_NUM): {
-      CODE_COVERAGE(453); // Hit
-      reg1F = reg1F + reg2F;
-      break;
-    }
-    MVM_CASE(VM_NUM_OP_SUBTRACT): {
-      CODE_COVERAGE(454); // Hit
-      reg1F = reg1F - reg2F;
-      break;
-    }
-    MVM_CASE(VM_NUM_OP_MULTIPLY): {
-      CODE_COVERAGE(455); // Hit
-      reg1F = reg1F * reg2F;
-      break;
-    }
-    MVM_CASE(VM_NUM_OP_DIVIDE): {
-      CODE_COVERAGE(456); // Hit
-      reg1F = reg1F / reg2F;
-      break;
-    }
-    MVM_CASE(VM_NUM_OP_DIVIDE_AND_TRUNC): {
-      CODE_COVERAGE(457); // Hit
-      reg1F = mvm_float64ToInt32((reg1F / reg2F));
-      break;
-    }
-    MVM_CASE(VM_NUM_OP_REMAINDER): {
-      CODE_COVERAGE(458); // Hit
-      reg1F = fmod(reg1F, reg2F);
-      break;
-    }
-    MVM_CASE(VM_NUM_OP_POWER): {
-      CODE_COVERAGE(459); // Hit
+    MVM_CASE(VM_NUM_OP_LESS_THAN): reg1 = reg1F < reg2F; goto SUB_TAIL_PUSH_REG1_BOOL;
+    MVM_CASE(VM_NUM_OP_GREATER_THAN): reg1 = reg1F > reg2F; goto SUB_TAIL_PUSH_REG1_BOOL;
+    MVM_CASE(VM_NUM_OP_LESS_EQUAL): reg1 = reg1F <= reg2F; goto SUB_TAIL_PUSH_REG1_BOOL;
+    MVM_CASE(VM_NUM_OP_GREATER_EQUAL): reg1 = reg1F >= reg2F; goto SUB_TAIL_PUSH_REG1_BOOL;
+    MVM_CASE(VM_NUM_OP_ADD_NUM): reg1F = reg1F + reg2F; break;
+    MVM_CASE(VM_NUM_OP_SUBTRACT): reg1F = reg1F - reg2F; break;
+    MVM_CASE(VM_NUM_OP_MULTIPLY): reg1F = reg1F * reg2F; break;
+    MVM_CASE(VM_NUM_OP_DIVIDE): reg1F = reg1F / reg2F; break;
+    MVM_CASE(VM_NUM_OP_DIVIDE_AND_TRUNC): reg1F = mvm_floatToInt32(reg1F / reg2F); break;
+    MVM_CASE(VM_NUM_OP_REMAINDER): reg1F = MVM_FLOAT64_FMOD(reg1F, reg2F); break;
+    MVM_CASE(VM_NUM_OP_POWER):
       if (!isfinite(reg2F) && ((reg1F == 1.0) || (reg1F == -1.0))) {
         reg1 = VM_VALUE_NAN;
         goto SUB_TAIL_POP_0_PUSH_REG1;
       }
-      reg1F = pow(reg1F, reg2F);
+      reg1F = MVM_FLOAT64_POW(reg1F, reg2F);
       break;
-    }
-    MVM_CASE(VM_NUM_OP_NEGATE): {
-      CODE_COVERAGE(460); // Hit
-      reg1F = -reg2F;
-      break;
-    }
-    MVM_CASE(VM_NUM_OP_UNARY_PLUS): {
-      CODE_COVERAGE(461); // Hit
-      reg1F = reg2F;
-      break;
-    }
-  } // End of switch vm_TeNumberOp for float64
+    MVM_CASE(VM_NUM_OP_NEGATE): reg1F = -reg2F; break;
+    MVM_CASE(VM_NUM_OP_UNARY_PLUS): reg1F = reg2F; break;
+  }
 
-  // Convert the result from a float
   FLUSH_REGISTER_CACHE();
   reg1 = mvm_newNumber(vm, reg1F);
   CACHE_REGISTERS();
   goto SUB_TAIL_POP_0_PUSH_REG1;
-} // End of SUB_NUM_OP_FLOAT64
+} // End of SUB_NUM_OP_FLOAT
 #endif // MVM_SUPPORT_FLOAT
 
 /* --------------------------------------------------------------------------
@@ -5327,10 +5548,17 @@ TeError mvm_restore(mvm_VM** result, MVM_LONG_PTR_TYPE lpBytecode, size_t byteco
     return MVM_E_REQUIRES_LATER_ENGINE;
   }
 
-  uint32_t featureFlags = header.requiredFeatureFlags;;
-  if (MVM_SUPPORT_FLOAT && !(featureFlags & (1 << FF_FLOAT_SUPPORT))) {
+  uint32_t featureFlags = header.requiredFeatureFlags;
+  if (!MVM_SUPPORT_FLOAT && (featureFlags & (1u << FF_FLOAT_SUPPORT))) {
     CODE_COVERAGE_ERROR_PATH(180); // Not hit
     return MVM_E_BYTECODE_REQUIRES_FLOAT_SUPPORT;
+  }
+
+  const bool numericTypes = (featureFlags & (1u << FF_NUMERIC_TYPES)) != 0;
+  if ((header.requiredEngineVersion == 0 && (numericTypes || header.numericOptions != 0)) ||
+      (!numericTypes && header.numericOptions != 0) ||
+      (numericTypes && (header.numericOptions & ~MVM_NUMERIC_OPTION_DEFAULT_F32) != 0)) {
+    return MVM_E_INVALID_BYTECODE;
   }
 
   err = vm_validatePortFileMacros(lpBytecode, &header, context);
@@ -5358,6 +5586,8 @@ TeError mvm_restore(mvm_VM** result, MVM_LONG_PTR_TYPE lpBytecode, size_t byteco
   vm->context = context;
   vm->lpBytecode = lpBytecode;
   vm->globals = (void*)(resolvedImports + importCount);
+  vm->numericTypes = numericTypes;
+  vm->defaultFloatWidth = (header.numericOptions & MVM_NUMERIC_OPTION_DEFAULT_F32) ? 32 : 64;
   #ifdef MVM_GAS_COUNTER
   vm->stopAfterNInstructions = -1;
   #endif
@@ -6896,7 +7126,7 @@ TeError mvm_releaseHandle(VM* vm, mvm_Handle* handle) {
 }
 
 #if MVM_SUPPORT_FLOAT
-static Value vm_float64ToStr(VM* vm, Value value) {
+static Value vm_floatToStr(VM* vm, Value value) {
   CODE_COVERAGE(619); // Hit
 
   VM_ASSERT_NOT_USING_CACHED_REGISTERS(vm); // Because we allocate a new string
@@ -6904,7 +7134,17 @@ static Value vm_float64ToStr(VM* vm, Value value) {
   // I don't think this is 100% compliant, but it's probably fine for most use
   // cases, and most importantly it's small.
 
-  double x = mvm_toFloat64(vm, value);
+  vm_TsNumeric numeric;
+  if (vm_readNumeric(vm, value, &numeric) != MVM_E_SUCCESS) return VM_UNEXPECTED_INTERNAL_ERROR(vm);
+  if (numeric.kind == VM_NUM_SIGNED || numeric.kind == VM_NUM_UNSIGNED) {
+    char integerBuf[24];
+    int size = numeric.kind == VM_NUM_SIGNED
+      ? MVM_SNPRINTF(integerBuf, sizeof integerBuf, "%" PRId64, numeric.value.i)
+      : MVM_SNPRINTF(integerBuf, sizeof integerBuf, "%" PRIu64, numeric.value.u);
+    VM_ASSERT(vm, size >= 0 && (size_t)size < sizeof integerBuf);
+    return mvm_newString(vm, integerBuf, (size_t)size);
+  }
+  double x = vm_numericAsDouble(&numeric);
 
   char buf[64];
   char* p = buf;
@@ -6960,10 +7200,10 @@ static Value vm_convertToString(VM* vm, Value value) {
       int32_t i = vm_readInt32(vm, type, value);
       return vm_intToStr(vm, i);
     }
-    case TC_REF_FLOAT64: {
+    case TC_REF_NUMBER: {
       CODE_COVERAGE(248); // Not hit
       #if MVM_SUPPORT_FLOAT
-      return vm_float64ToStr(vm, value);
+      return vm_floatToStr(vm, value);
       #else
       constStr = "";
       #endif
@@ -7132,8 +7372,799 @@ static TeTypeCode deepTypeOf(VM* vm, Value value) {
   return typeCode;
 }
 
+static bool vm_isNumberType(TeTypeCode type) {
+  return type == TC_VAL_INT14 || type == TC_REF_INT32 || type == TC_REF_NUMBER ||
+    type == TC_VAL_NAN || type == TC_VAL_NEG_ZERO;
+}
+
+static uint64_t vm_numericMask(uint8_t width) {
+  return width == 64 ? UINT64_MAX : (((uint64_t)1 << width) - 1);
+}
+
+static int64_t vm_bitsToInt64(uint64_t bits) {
+  if (bits <= INT64_MAX) return (int64_t)bits;
+  return -1 - (int64_t)(UINT64_MAX - bits);
+}
+
+static void vm_setIntegerNumeric(vm_TsNumeric* out, bool isSigned, uint8_t width, uint64_t bits) {
+  uint64_t mask = vm_numericMask(width);
+  bits &= mask;
+  out->kind = isSigned ? VM_NUM_SIGNED : VM_NUM_UNSIGNED;
+  out->width = width;
+  if (isSigned) {
+    uint64_t signBit = (uint64_t)1 << (width - 1);
+    if (bits & signBit) bits |= ~mask;
+    out->value.i = vm_bitsToInt64(bits);
+  } else {
+    out->value.u = bits;
+  }
+}
+
+static uint64_t vm_numericIntegerBits(const vm_TsNumeric* value) {
+  return value->kind == VM_NUM_SIGNED ? (uint64_t)value->value.i : value->value.u;
+}
+
+static double vm_numericAsDouble(const vm_TsNumeric* value) {
+  switch (value->kind) {
+    case VM_NUM_SIGNED: return (double)value->value.i;
+    case VM_NUM_UNSIGNED: return (double)value->value.u;
+    case VM_NUM_FLOAT: return value->width == 32 ? (double)value->value.f32 : value->value.f64;
+    case VM_NUM_ORDINARY: return value->value.f64;
+  }
+  return 0;
+}
+
+static bool vm_isIntegerNumeric(const vm_TsNumeric* value) {
+  return value->kind == VM_NUM_SIGNED || value->kind == VM_NUM_UNSIGNED;
+}
+
+static TeError vm_readNumeric(VM* vm, Value value, vm_TsNumeric* out) {
+  TeTypeCode type = deepTypeOf(vm, value);
+  memset(out, 0, sizeof(*out));
+  if (type == TC_VAL_INT14) {
+    out->kind = VM_NUM_ORDINARY;
+    out->value.f64 = (double)VirtualInt14_decode(vm, value);
+    return MVM_E_SUCCESS;
+  }
+  if (type == TC_REF_INT32) {
+    out->kind = VM_NUM_ORDINARY;
+    out->value.f64 = (double)vm_readInt32(vm, type, value);
+    return MVM_E_SUCCESS;
+  }
+  if (type == TC_VAL_NAN) {
+    out->kind = VM_NUM_ORDINARY;
 #if MVM_SUPPORT_FLOAT
-int32_t mvm_float64ToInt32(MVM_FLOAT64 value) {
+    out->value.f64 = MVM_FLOAT_NAN;
+#else
+    out->value.f64 = 0;
+#endif
+    return MVM_E_SUCCESS;
+  }
+  if (type == TC_VAL_NEG_ZERO) {
+    out->kind = VM_NUM_ORDINARY;
+    out->value.f64 = -0.0;
+    return MVM_E_SUCCESS;
+  }
+  if (type != TC_REF_NUMBER) return MVM_E_NUMERIC_ERROR;
+
+  LongPtr body = DynamicPtr_decode_long(vm, value);
+  uint16_t bodySize = vm_getAllocationSizeExcludingHeaderFromHeaderWord(readAllocationHeaderWord_long(body));
+  if (!vm->numericTypes) {
+    if (bodySize != sizeof(double)) return MVM_E_INVALID_BYTECODE;
+    double number;
+    memcpy_long(&number, body, sizeof(number));
+    out->kind = VM_NUM_ORDINARY;
+    out->value.f64 = number;
+    return MVM_E_SUCCESS;
+  }
+
+  if (bodySize < 2) return MVM_E_INVALID_BYTECODE;
+  uint16_t descriptorWord = LongPtr_read2_unaligned(body);
+  LongPtr payload = LongPtr_add(body, 2);
+  uint8_t low = (uint8_t)descriptorWord;
+  uint8_t high = (uint8_t)(descriptorWord >> 8);
+  if (high == 1) {
+    if (low > 1) return MVM_E_INVALID_BYTECODE;
+    uint8_t width = low == 0 ? 32 : 64;
+    uint16_t expected = width == 32 ? 6 : 10;
+    if (bodySize != expected) return MVM_E_INVALID_BYTECODE;
+    out->kind = VM_NUM_ORDINARY;
+    if (width == 32) {
+      float number;
+      memcpy_long(&number, payload, sizeof(number));
+      out->value.f64 = (double)number;
+    } else {
+      memcpy_long(&out->value.f64, payload, sizeof(double));
+    }
+    return MVM_E_SUCCESS;
+  }
+  if (high != 0) return MVM_E_INVALID_BYTECODE;
+  if (low == 0x80 || low == 0x81) {
+    uint8_t width = low == 0x80 ? 32 : 64;
+    if (bodySize != (uint16_t)(width == 32 ? 6 : 10)) return MVM_E_INVALID_BYTECODE;
+    out->kind = VM_NUM_FLOAT;
+    out->width = width;
+    if (width == 32) memcpy_long(&out->value.f32, payload, sizeof(float));
+    else memcpy_long(&out->value.f64, payload, sizeof(double));
+    return MVM_E_SUCCESS;
+  }
+  if ((low & 0x80) != 0) return MVM_E_INVALID_BYTECODE;
+
+  bool isSigned = (low & 0x40) != 0;
+  uint8_t width = (uint8_t)((low & 0x3F) + 1);
+  uint8_t bucket = width <= 16 ? 2 : width <= 32 ? 4 : 8;
+  if (bodySize != (uint16_t)(bucket + 2)) return MVM_E_INVALID_BYTECODE;
+  uint64_t bits = 0;
+  if (bucket == 2) {
+    if (isSigned) { int16_t x; memcpy_long(&x, payload, 2); bits = (uint64_t)(int64_t)x; }
+    else { uint16_t x; memcpy_long(&x, payload, 2); bits = x; }
+  } else if (bucket == 4) {
+    if (isSigned) { int32_t x; memcpy_long(&x, payload, 4); bits = (uint64_t)(int64_t)x; }
+    else { uint32_t x; memcpy_long(&x, payload, 4); bits = x; }
+  } else if (isSigned) {
+    int64_t x; memcpy_long(&x, payload, 8); bits = (uint64_t)x;
+  } else {
+    memcpy_long(&bits, payload, 8);
+  }
+  uint64_t mask = vm_numericMask(width);
+  uint64_t normalized = bits & mask;
+  if (isSigned) {
+    uint64_t signBit = (uint64_t)1 << (width - 1);
+    uint64_t extended = (normalized & signBit) ? normalized | ~mask : normalized;
+    if (extended != bits) return MVM_E_INVALID_BYTECODE;
+  } else if (normalized != bits) {
+    return MVM_E_INVALID_BYTECODE;
+  }
+  vm_setIntegerNumeric(out, isSigned, width, bits);
+  return MVM_E_SUCCESS;
+}
+
+static TeError vm_numericCast(VM* vm, const vm_TsNumeric* value, vm_TsNumericType target, vm_TsNumeric* out) {
+  if (target.kind == VM_NUM_SIGNED || target.kind == VM_NUM_UNSIGNED) {
+    if (target.width < 1 || target.width > 64) return MVM_E_NUMERIC_ERROR;
+    uint64_t bits;
+    if (vm_isIntegerNumeric(value)) {
+      bits = vm_numericIntegerBits(value);
+    } else {
+#if MVM_SUPPORT_FLOAT
+      double number = vm_numericAsDouble(value);
+      if (!isfinite(number)) return MVM_E_NUMERIC_ERROR;
+      double modulus = ldexp(1.0, target.width);
+      double reduced = fmod(trunc(number), modulus);
+      if (reduced < 0) reduced += modulus;
+      // `reduced` is below 2^64, so this conversion is in range.
+      bits = (uint64_t)reduced;
+#else
+      return MVM_E_OPERATION_REQUIRES_FLOAT_SUPPORT;
+#endif
+    }
+    vm_setIntegerNumeric(out, target.kind == VM_NUM_SIGNED, target.width, bits);
+    return MVM_E_SUCCESS;
+  }
+  if (target.kind == VM_NUM_FLOAT) {
+    if (target.width != 32 && target.width != 64) return MVM_E_NUMERIC_ERROR;
+#if MVM_SUPPORT_FLOAT
+    double number = vm_numericAsDouble(value);
+    out->kind = VM_NUM_FLOAT;
+    out->width = target.width;
+    if (target.width == 32) out->value.f32 = (float)number;
+    else out->value.f64 = number;
+    return MVM_E_SUCCESS;
+#else
+    return MVM_E_OPERATION_REQUIRES_FLOAT_SUPPORT;
+#endif
+  }
+  return MVM_E_NUMERIC_ERROR;
+}
+
+static TeError vm_numericApplyContext(VM* vm, vm_TsNumeric* value, vm_TsNumericType context) {
+  if (value->kind != VM_NUM_ORDINARY) return MVM_E_SUCCESS;
+  vm_TsNumeric converted;
+  TeError err = vm_numericCast(vm, value, context, &converted);
+  if (err != MVM_E_SUCCESS) return err;
+  if (context.kind == VM_NUM_FLOAT) {
+    // A context rounds ordinary values at the operation boundary without
+    // changing their semantic flavor. A later NumericCast makes a boundary
+    // annotation explicit when the source requested one.
+    value->kind = VM_NUM_ORDINARY;
+    value->width = 0;
+    value->value.f64 = vm_numericAsDouble(&converted);
+  } else {
+    *value = converted;
+  }
+  return MVM_E_SUCCESS;
+}
+
+static int vm_compareDoubleToInteger(double number, const vm_TsNumeric* integer) {
+#if MVM_SUPPORT_FLOAT
+  if (isnan(number)) return 2;
+#endif
+  if (integer->kind == VM_NUM_SIGNED) {
+    const double min = -0x1p63;
+    const double limit = 0x1p63;
+    if (number < min) return 1;
+    if (number >= limit) return -1;
+    double integral = (double)(int64_t)number;
+    int64_t whole = (int64_t)integral;
+    if (whole < integer->value.i) return 1;
+    if (whole > integer->value.i) return -1;
+    if (number > integral) return -1;
+    if (number < integral) return 1;
+    return 0;
+  }
+  if (number < 0) return 1;
+  if (number >= 0x1p64) return -1;
+  double integral = (double)(uint64_t)number;
+  uint64_t whole = (uint64_t)integral;
+  if (whole < integer->value.u) return 1;
+  if (whole > integer->value.u) return -1;
+  if (number > integral) return -1;
+  if (number < integral) return 1;
+  return 0;
+}
+
+static int vm_compareNumericExact(VM* vm, const vm_TsNumeric* a, const vm_TsNumeric* b) {
+  (void)vm;
+  if (vm_isIntegerNumeric(a) && vm_isIntegerNumeric(b)) {
+    if (a->kind == VM_NUM_SIGNED && b->kind == VM_NUM_SIGNED) {
+      return a->value.i < b->value.i ? -1 : a->value.i > b->value.i ? 1 : 0;
+    }
+    if (a->kind == VM_NUM_UNSIGNED && b->kind == VM_NUM_UNSIGNED) {
+      return a->value.u < b->value.u ? -1 : a->value.u > b->value.u ? 1 : 0;
+    }
+    if (a->kind == VM_NUM_SIGNED) {
+      if (a->value.i < 0) return -1;
+      uint64_t x = (uint64_t)a->value.i;
+      return x < b->value.u ? -1 : x > b->value.u ? 1 : 0;
+    }
+    if (b->value.i < 0) return 1;
+    uint64_t y = (uint64_t)b->value.i;
+    return a->value.u < y ? -1 : a->value.u > y ? 1 : 0;
+  }
+  if (vm_isIntegerNumeric(a)) return vm_compareDoubleToInteger(vm_numericAsDouble(b), a);
+  if (vm_isIntegerNumeric(b)) return -vm_compareDoubleToInteger(vm_numericAsDouble(a), b);
+  double x = vm_numericAsDouble(a);
+  double y = vm_numericAsDouble(b);
+#if MVM_SUPPORT_FLOAT
+  if (isnan(x) || isnan(y)) return 2;
+#endif
+  return x < y ? -1 : x > y ? 1 : 0;
+}
+
+static TeError vm_numericBinary(VM* vm, vm_TeNumberOp op, const vm_TsNumeric* a0, const vm_TsNumeric* b0, const vm_TsNumericType* context, vm_TsNumeric* out) {
+  vm_TsNumeric a = *a0, b = *b0;
+  if (context) {
+    TeError err = vm_numericApplyContext(vm, &a, *context);
+    if (err) return err;
+    err = vm_numericApplyContext(vm, &b, *context);
+    if (err) return err;
+  }
+
+  if (op <= VM_NUM_OP_GREATER_EQUAL) {
+    int cmp = vm_compareNumericExact(vm, &a, &b);
+    bool result = false;
+    if (cmp != 2) {
+      switch (op) {
+        case VM_NUM_OP_LESS_THAN: result = cmp < 0; break;
+        case VM_NUM_OP_GREATER_THAN: result = cmp > 0; break;
+        case VM_NUM_OP_LESS_EQUAL: result = cmp <= 0; break;
+        case VM_NUM_OP_GREATER_EQUAL: result = cmp >= 0; break;
+        default: break;
+      }
+    }
+    memset(out, 0, sizeof(*out));
+    out->kind = result ? VM_NUM_UNSIGNED : VM_NUM_UNSIGNED;
+    out->width = 1;
+    out->value.u = result;
+    return MVM_E_SUCCESS;
+  }
+
+  if (vm_isIntegerNumeric(&a) && vm_isIntegerNumeric(&b)) {
+    if (a.kind != b.kind) return MVM_E_NUMERIC_ERROR;
+    bool isSigned = a.kind == VM_NUM_SIGNED;
+    uint8_t width = a.width > b.width ? a.width : b.width;
+    uint64_t x = vm_numericIntegerBits(&a) & vm_numericMask(width);
+    uint64_t y = vm_numericIntegerBits(&b) & vm_numericMask(width);
+    uint64_t z = 0;
+    switch (op) {
+      case VM_NUM_OP_ADD_NUM: z = x + y; break;
+      case VM_NUM_OP_SUBTRACT: z = x - y; break;
+      case VM_NUM_OP_MULTIPLY: z = x * y; break;
+      case VM_NUM_OP_DIVIDE:
+      case VM_NUM_OP_DIVIDE_AND_TRUNC: {
+        if (y == 0) return MVM_E_NUMERIC_ERROR;
+        if (!isSigned) z = x / y;
+        else {
+          int64_t sx = vm_bitsToInt64((x & ((uint64_t)1 << (width - 1))) ? x | ~vm_numericMask(width) : x);
+          int64_t sy = vm_bitsToInt64((y & ((uint64_t)1 << (width - 1))) ? y | ~vm_numericMask(width) : y);
+          uint64_t mx = sx < 0 ? (uint64_t)(-(sx + 1)) + 1 : (uint64_t)sx;
+          uint64_t my = sy < 0 ? (uint64_t)(-(sy + 1)) + 1 : (uint64_t)sy;
+          uint64_t q = mx / my;
+          z = ((sx < 0) != (sy < 0)) ? (uint64_t)(0 - q) : q;
+        }
+        break;
+      }
+      case VM_NUM_OP_REMAINDER: {
+        if (y == 0) return MVM_E_NUMERIC_ERROR;
+        if (!isSigned) z = x % y;
+        else {
+          int64_t sx = vm_bitsToInt64((x & ((uint64_t)1 << (width - 1))) ? x | ~vm_numericMask(width) : x);
+          int64_t sy = vm_bitsToInt64((y & ((uint64_t)1 << (width - 1))) ? y | ~vm_numericMask(width) : y);
+          uint64_t mx = sx < 0 ? (uint64_t)(-(sx + 1)) + 1 : (uint64_t)sx;
+          uint64_t my = sy < 0 ? (uint64_t)(-(sy + 1)) + 1 : (uint64_t)sy;
+          uint64_t rem = mx % my;
+          z = sx < 0 ? (uint64_t)(0 - rem) : rem;
+        }
+        break;
+      }
+      case VM_NUM_OP_POWER: {
+        int64_t signedExponent = 0;
+        uint64_t exponent = y;
+        if (isSigned) {
+          signedExponent = vm_bitsToInt64((y & ((uint64_t)1 << (width - 1))) ? y | ~vm_numericMask(width) : y);
+          if (signedExponent < 0) return MVM_E_NUMERIC_ERROR;
+          exponent = (uint64_t)signedExponent;
+        }
+        z = 1 & vm_numericMask(width);
+        while (exponent) {
+          if (exponent & 1) z *= x;
+          x *= x;
+          exponent >>= 1;
+        }
+        break;
+      }
+      default: return MVM_E_NUMERIC_ERROR;
+    }
+    vm_setIntegerNumeric(out, isSigned, width, z);
+    return MVM_E_SUCCESS;
+  }
+
+#if MVM_SUPPORT_FLOAT
+  if (op == VM_NUM_OP_DIVIDE_AND_TRUNC) return MVM_E_NUMERIC_ERROR;
+  uint8_t width = context && context->kind == VM_NUM_FLOAT
+    ? context->width
+    : (a.kind == VM_NUM_ORDINARY || b.kind == VM_NUM_ORDINARY ? vm->defaultFloatWidth : 32);
+  if (a.kind == VM_NUM_FLOAT && a.width > width) width = a.width;
+  if (b.kind == VM_NUM_FLOAT && b.width > width) width = b.width;
+  double x = vm_numericAsDouble(&a);
+  double y = vm_numericAsDouble(&b);
+  if (width == 32) { x = (float)x; y = (float)y; }
+  double z;
+  switch (op) {
+    case VM_NUM_OP_ADD_NUM: z = x + y; break;
+    case VM_NUM_OP_SUBTRACT: z = x - y; break;
+    case VM_NUM_OP_MULTIPLY: z = x * y; break;
+    case VM_NUM_OP_DIVIDE: z = x / y; break;
+    case VM_NUM_OP_REMAINDER: z = width == 32 ? MVM_FLOAT32_FMOD((float)x, (float)y) : MVM_FLOAT64_FMOD(x, y); break;
+    case VM_NUM_OP_POWER:
+      if (!isfinite(y) && (x == 1.0 || x == -1.0)) z = MVM_FLOAT_NAN;
+      else z = width == 32 ? MVM_FLOAT32_POW((float)x, (float)y) : MVM_FLOAT64_POW(x, y);
+      break;
+    default: return MVM_E_NUMERIC_ERROR;
+  }
+  if (width == 32) z = (float)z;
+  out->kind = (a.kind == VM_NUM_FLOAT || b.kind == VM_NUM_FLOAT) ? VM_NUM_FLOAT : VM_NUM_ORDINARY;
+  out->width = out->kind == VM_NUM_FLOAT ? width : 0;
+  if (out->kind == VM_NUM_FLOAT && width == 32) out->value.f32 = (float)z;
+  else out->value.f64 = z;
+  return MVM_E_SUCCESS;
+#else
+  (void)context; (void)out;
+  return MVM_E_OPERATION_REQUIRES_FLOAT_SUPPORT;
+#endif
+}
+
+static TeError vm_numericUnary(VM* vm, vm_TeNumberOp op, const vm_TsNumeric* value0, const vm_TsNumericType* context, vm_TsNumeric* out) {
+  vm_TsNumeric value = *value0;
+  if (context) {
+    TeError err = vm_numericApplyContext(vm, &value, *context);
+    if (err) return err;
+  }
+  if (vm_isIntegerNumeric(&value)) {
+    bool isSigned = value.kind == VM_NUM_SIGNED;
+    uint64_t bits = vm_numericIntegerBits(&value);
+    if (op == VM_NUM_OP_NEGATE) bits = 0 - bits;
+    else if (op != VM_NUM_OP_UNARY_PLUS) return MVM_E_NUMERIC_ERROR;
+    vm_setIntegerNumeric(out, isSigned, value.width, bits);
+    return MVM_E_SUCCESS;
+  }
+#if MVM_SUPPORT_FLOAT
+  if (op != VM_NUM_OP_NEGATE && op != VM_NUM_OP_UNARY_PLUS) return MVM_E_NUMERIC_ERROR;
+  double number = vm_numericAsDouble(&value);
+  if (op == VM_NUM_OP_NEGATE) number = -number;
+  uint8_t width = context && context->kind == VM_NUM_FLOAT ? context->width : vm->defaultFloatWidth;
+  if (value.kind == VM_NUM_FLOAT && value.width > width) width = value.width;
+  if (width == 32) number = (float)number;
+  out->kind = value.kind == VM_NUM_FLOAT ? VM_NUM_FLOAT : VM_NUM_ORDINARY;
+  out->width = out->kind == VM_NUM_FLOAT ? width : 0;
+  if (out->kind == VM_NUM_FLOAT && width == 32) out->value.f32 = (float)number;
+  else out->value.f64 = number;
+  return MVM_E_SUCCESS;
+#else
+  return MVM_E_OPERATION_REQUIRES_FLOAT_SUPPORT;
+#endif
+}
+
+static TeError vm_numericBitwise(VM* vm, vm_TeBitwiseOp op, const vm_TsNumeric* a0, const vm_TsNumeric* b0, vm_TsNumeric* out) {
+  (void)vm;
+  vm_TsNumeric a = *a0, b = *b0;
+  if (!vm_isIntegerNumeric(&a)) return MVM_E_NUMERIC_ERROR;
+  bool isSigned = a.kind == VM_NUM_SIGNED;
+  uint8_t width = a.width;
+  uint64_t x = vm_numericIntegerBits(&a) & vm_numericMask(width);
+  uint64_t y = 0;
+  if (op != VM_BIT_OP_NOT) {
+    if (op < VM_BIT_OP_END_OF_SHIFT_OPERATORS) {
+      if (vm_isIntegerNumeric(&b)) {
+        if (b.kind == VM_NUM_SIGNED && b.value.i < 0) return MVM_E_NUMERIC_ERROR;
+        y = vm_numericIntegerBits(&b);
+      }
+      else {
+#if MVM_SUPPORT_FLOAT
+        double count = vm_numericAsDouble(&b);
+        if (!isfinite(count) || count < 0) return MVM_E_NUMERIC_ERROR;
+        count = trunc(count);
+        y = count >= 64 ? UINT64_MAX : (uint64_t)count;
+#else
+        return MVM_E_OPERATION_REQUIRES_FLOAT_SUPPORT;
+#endif
+      }
+    } else {
+      if (!vm_isIntegerNumeric(&b) || b.kind != a.kind) return MVM_E_NUMERIC_ERROR;
+      if (a.kind != b.kind) return MVM_E_NUMERIC_ERROR;
+      if (b.width > width) width = b.width;
+      x = vm_numericIntegerBits(&a) & vm_numericMask(width);
+      y = vm_numericIntegerBits(&b) & vm_numericMask(width);
+    }
+  }
+  uint64_t mask = vm_numericMask(width);
+  uint64_t z = 0;
+  if (op == VM_BIT_OP_NOT) z = ~x;
+  else if (op == VM_BIT_OP_AND) z = x & y;
+  else if (op == VM_BIT_OP_OR) z = x | y;
+  else if (op == VM_BIT_OP_XOR) z = x ^ y;
+  else {
+    if (y >= width) {
+      z = op == VM_BIT_OP_SHR_ARITHMETIC && isSigned && (x & ((uint64_t)1 << (width - 1))) ? mask : 0;
+    } else if (op == VM_BIT_OP_SHL) {
+      z = x << y;
+    } else if (op == VM_BIT_OP_SHR_LOGICAL || !isSigned) {
+      z = x >> y;
+    } else {
+      uint64_t shifted = x >> y;
+      if (x & ((uint64_t)1 << (width - 1))) {
+        uint64_t highMask = mask ^ (mask >> y);
+        shifted |= highMask;
+      }
+      z = shifted;
+    }
+    if (op == VM_BIT_OP_SHR_LOGICAL && isSigned) isSigned = false;
+  }
+  vm_setIntegerNumeric(out, isSigned, width, z & mask);
+  return MVM_E_SUCCESS;
+}
+
+static TeError vm_writeNumeric(VM* vm, const vm_TsNumeric* value, Value* out) {
+  if (vm_isIntegerNumeric(value)) {
+    if (value->width < 1 || value->width > 64) return MVM_E_NUMERIC_ERROR;
+    uint8_t bucket = value->width <= 16 ? 2 : value->width <= 32 ? 4 : 8;
+    uint16_t size = bucket + 2;
+    uint8_t* body = mvm_allocate(vm, size, TC_REF_NUMBER);
+    uint8_t descriptor = (uint8_t)((value->kind == VM_NUM_SIGNED ? 0x40 : 0) | (value->width - 1));
+    uint16_t word = descriptor;
+    memcpy(body, &word, 2);
+    uint64_t bits = value->kind == VM_NUM_SIGNED
+      ? (uint64_t)value->value.i
+      : value->value.u & vm_numericMask(value->width);
+    if (bucket == 2) {
+      uint16_t payload = (uint16_t)bits;
+      memcpy(body + 2, &payload, 2);
+    } else if (bucket == 4) {
+      uint32_t payload = (uint32_t)bits;
+      memcpy(body + 2, &payload, 4);
+    } else {
+      memcpy(body + 2, &bits, 8);
+    }
+    *out = ShortPtr_encode(vm, body);
+    return MVM_E_SUCCESS;
+  }
+  if (value->kind == VM_NUM_FLOAT) {
+    if (value->width != 32 && value->width != 64) return MVM_E_NUMERIC_ERROR;
+    uint16_t size = value->width == 32 ? 6 : 10;
+    uint8_t* body = mvm_allocate(vm, size, TC_REF_NUMBER);
+    uint16_t descriptor = value->width == 32 ? 0x80 : 0x81;
+    memcpy(body, &descriptor, 2);
+    if (value->width == 32) memcpy(body + 2, &value->value.f32, 4);
+    else memcpy(body + 2, &value->value.f64, 8);
+    *out = ShortPtr_encode(vm, body);
+    return MVM_E_SUCCESS;
+  }
+#if MVM_SUPPORT_FLOAT
+  double number = value->value.f64;
+  if (vm->numericTypes && vm->defaultFloatWidth == 32) number = (float)number;
+  if (isnan(number)) { *out = VM_VALUE_NAN; return MVM_E_SUCCESS; }
+  if (number == 0 && signbit(number)) { *out = VM_VALUE_NEG_ZERO; return MVM_E_SUCCESS; }
+  if (number >= (double)INT32_MIN && number <= (double)INT32_MAX && trunc(number) == number) {
+    *out = mvm_newInt32(vm, (int32_t)number);
+    return MVM_E_SUCCESS;
+  }
+  if (!vm->numericTypes) {
+    double* body = GC_ALLOCATE_TYPE(vm, double, TC_REF_NUMBER);
+    *body = number;
+    *out = ShortPtr_encode(vm, body);
+    return MVM_E_SUCCESS;
+  }
+  uint8_t width = vm->defaultFloatWidth;
+  uint16_t descriptor = width == 32 ? 0x0100 : 0x0101;
+  uint16_t size = width == 32 ? 6 : 10;
+  uint8_t* body = mvm_allocate(vm, size, TC_REF_NUMBER);
+  memcpy(body, &descriptor, 2);
+  if (width == 32) { float n = (float)number; memcpy(body + 2, &n, 4); }
+  else memcpy(body + 2, &number, 8);
+  *out = ShortPtr_encode(vm, body);
+  return MVM_E_SUCCESS;
+#else
+  (void)value;
+  (void)out;
+  return MVM_E_OPERATION_REQUIRES_FLOAT_SUPPORT;
+#endif
+}
+
+static bool vm_numericDecodeType(uint8_t descriptor, vm_TsNumericType* out) {
+  if (descriptor == 0x80 || descriptor == 0x81) {
+    out->kind = VM_NUM_FLOAT;
+    out->width = descriptor == 0x80 ? 32 : 64;
+    return true;
+  }
+  if ((descriptor & 0x80) != 0) return false;
+  out->kind = (descriptor & 0x40) ? VM_NUM_SIGNED : VM_NUM_UNSIGNED;
+  out->width = (uint8_t)((descriptor & 0x3F) + 1);
+  return true;
+}
+
+static TeError vm_numericWriteContextResult(VM* vm, const vm_TsNumeric* value, const vm_TsNumericType* context, Value* out) {
+  uint8_t previousWidth = vm->defaultFloatWidth;
+  if (value->kind == VM_NUM_ORDINARY && context && context->kind == VM_NUM_FLOAT) {
+    vm->defaultFloatWidth = context->width;
+  }
+  TeError err = vm_writeNumeric(vm, value, out);
+  vm->defaultFloatWidth = previousWidth;
+  return err;
+}
+
+static TeError vm_numericBytecode(VM* vm, uint8_t opcode, uint8_t descriptor, Value* leftSlot, Value* rightSlot, Value* resultValue, uint8_t* popCount) {
+  if (!vm->numericTypes) return MVM_E_INVALID_BYTECODE;
+
+  if (opcode == VM_OP4_NUM_KIND || opcode == VM_OP4_NUM_IS_INTEGER) {
+    *popCount = 1;
+    vm_TsNumeric value;
+    if (!leftSlot) return MVM_E_INVALID_BYTECODE;
+    TeError err = vm_readNumeric(vm, *leftSlot, &value);
+    if (err == MVM_E_INVALID_BYTECODE) return err;
+    if (opcode == VM_OP4_NUM_IS_INTEGER) {
+      bool isInteger = err == MVM_E_SUCCESS && vm_isIntegerNumeric(&value);
+#if MVM_SUPPORT_FLOAT
+      if (err == MVM_E_SUCCESS && !isInteger) {
+        double number = vm_numericAsDouble(&value);
+        isInteger = isfinite(number) && trunc(number) == number;
+      }
+#else
+      if (err == MVM_E_SUCCESS) isInteger = true;
+#endif
+      *resultValue = isInteger ? VM_VALUE_TRUE : VM_VALUE_FALSE;
+      return MVM_E_SUCCESS;
+    }
+    if (err != MVM_E_SUCCESS) {
+      if (err == MVM_E_NUMERIC_ERROR) { *resultValue = VM_VALUE_UNDEFINED; return MVM_E_SUCCESS; }
+      return err;
+    }
+    char name[8];
+    if (value.kind == VM_NUM_ORDINARY) {
+      memcpy(name, "number", 7);
+    } else if (value.kind == VM_NUM_FLOAT) {
+      snprintf(name, sizeof(name), "f%u", (unsigned)value.width);
+    } else {
+      snprintf(name, sizeof(name), "%c%u", value.kind == VM_NUM_SIGNED ? 'i' : 'u', (unsigned)value.width);
+    }
+    *resultValue = mvm_newString(vm, name, strlen(name));
+    return MVM_E_SUCCESS;
+  }
+
+  vm_TsNumericType context;
+  if (opcode != VM_OP4_NUM_KIND && opcode != VM_OP4_NUM_IS_INTEGER && !vm_numericDecodeType(descriptor, &context)) {
+    return MVM_E_INVALID_BYTECODE;
+  }
+
+  uint8_t familyStart;
+  uint8_t operationIndex;
+  bool typed = false;
+  bool defaultContext = false;
+  if (opcode >= VM_OP4_NUM_ADD_TYPED && opcode <= VM_OP4_NUM_USHR_TYPED) {
+    familyStart = VM_OP4_NUM_ADD_TYPED; typed = true; operationIndex = opcode - familyStart;
+  } else if (opcode >= VM_OP4_NUM_ADD_CONTEXT && opcode <= VM_OP4_NUM_USHR_CONTEXT) {
+    familyStart = VM_OP4_NUM_ADD_CONTEXT; operationIndex = opcode - familyStart;
+  } else if (opcode >= VM_OP4_NUM_ADD_DEFAULT && opcode <= VM_OP4_NUM_USHR_DEFAULT) {
+    familyStart = VM_OP4_NUM_ADD_DEFAULT; defaultContext = true; operationIndex = opcode - familyStart;
+  } else if (opcode >= VM_OP4_NUM_PLUS_DEFAULT && opcode <= VM_OP4_NUM_DEC_DEFAULT) {
+    familyStart = 0; defaultContext = true; operationIndex = 0;
+  } else {
+    familyStart = 0; operationIndex = 0;
+  }
+  if (opcode == VM_OP4_NUM_NOT_CONTEXT || opcode == VM_OP4_NUM_NOT_DEFAULT) operationIndex = 10;
+  if (defaultContext && context.kind != VM_NUM_FLOAT) return MVM_E_INVALID_BYTECODE;
+  (void)familyStart;
+  const vm_TsNumericType* pContext = &context;
+
+  if (opcode == VM_OP4_NUM_CAST) {
+    *popCount = 1;
+    vm_TsNumeric input, output;
+    TeError err = vm_readNumeric(vm, *rightSlot, &input);
+    if (err != MVM_E_SUCCESS) return err;
+    err = vm_numericCast(vm, &input, context, &output);
+    if (err != MVM_E_SUCCESS) return err;
+    return vm_numericWriteContextResult(vm, &output, NULL, resultValue);
+  }
+
+  if ((opcode >= VM_OP4_NUM_INC_CONTEXT && opcode <= VM_OP4_NUM_DEC_CONTEXT) ||
+      (opcode >= VM_OP4_NUM_INC_DEFAULT && opcode <= VM_OP4_NUM_DEC_DEFAULT)) {
+    *popCount = 1;
+    vm_TsNumeric input, output;
+    TeError err = vm_readNumeric(vm, *rightSlot, &input);
+    if (err != MVM_E_SUCCESS) return err;
+    err = vm_numericApplyContext(vm, &input, context);
+    if (err != MVM_E_SUCCESS) return err;
+    int delta = (opcode == VM_OP4_NUM_INC_CONTEXT || opcode == VM_OP4_NUM_INC_DEFAULT) ? 1 : -1;
+    if (vm_isIntegerNumeric(&input)) {
+      vm_setIntegerNumeric(&output, input.kind == VM_NUM_SIGNED, input.width,
+        vm_numericIntegerBits(&input) + (uint64_t)delta);
+    } else {
+#if MVM_SUPPORT_FLOAT
+      uint8_t width = context.kind == VM_NUM_FLOAT ? context.width : vm->defaultFloatWidth;
+      if (input.kind == VM_NUM_FLOAT && input.width > width) width = input.width;
+      double number = vm_numericAsDouble(&input) + delta;
+      if (width == 32) number = (float)number;
+      output.kind = input.kind == VM_NUM_FLOAT ? VM_NUM_FLOAT : VM_NUM_ORDINARY;
+      output.width = output.kind == VM_NUM_FLOAT ? width : 0;
+      if (output.kind == VM_NUM_FLOAT && width == 32) output.value.f32 = (float)number;
+      else output.value.f64 = number;
+#else
+      return MVM_E_OPERATION_REQUIRES_FLOAT_SUPPORT;
+#endif
+    }
+    return vm_numericWriteContextResult(vm, &output, pContext, resultValue);
+  }
+
+  bool isUnaryPlus = opcode == VM_OP4_NUM_PLUS_CONTEXT || opcode == VM_OP4_NUM_PLUS_DEFAULT;
+  bool isUnary = isUnaryPlus || opcode == VM_OP4_NUM_NEG_TYPED || opcode == VM_OP4_NUM_NOT_TYPED ||
+    opcode == VM_OP4_NUM_NEG_CONTEXT || opcode == VM_OP4_NUM_NOT_CONTEXT ||
+    opcode == VM_OP4_NUM_NEG_DEFAULT || opcode == VM_OP4_NUM_NOT_DEFAULT;
+  bool isBitwise = operationIndex >= 7 || opcode == VM_OP4_NUM_NOT_CONTEXT || opcode == VM_OP4_NUM_NOT_DEFAULT;
+  bool isBinary = !isUnary && operationIndex <= 13;
+  *popCount = isBinary ? 2 : 1;
+
+  // The default-float `+` keeps the ordinary JS string concatenation case.
+  if (defaultContext && opcode == VM_OP4_NUM_ADD_DEFAULT &&
+      (vm_isString(vm, *leftSlot) || vm_isString(vm, *rightSlot))) {
+    *leftSlot = vm_convertToString(vm, *leftSlot);
+    *rightSlot = vm_convertToString(vm, *rightSlot);
+    *resultValue = vm_concat(vm, leftSlot, rightSlot);
+    return MVM_E_SUCCESS;
+  }
+
+  vm_TsNumeric left, right, output;
+  TeError err;
+  if (isBinary) {
+    err = vm_readNumeric(vm, *leftSlot, &left);
+    if (err != MVM_E_SUCCESS) return err;
+    err = vm_readNumeric(vm, *rightSlot, &right);
+    if (err != MVM_E_SUCCESS) return err;
+  } else {
+    err = vm_readNumeric(vm, *rightSlot, &right);
+    if (err != MVM_E_SUCCESS) return err;
+    left = right;
+  }
+
+  if (isBitwise) {
+    err = vm_numericApplyContext(vm, &left, context);
+    vm_TeBitwiseOp bitwiseOp;
+    switch (operationIndex) {
+      case 7: bitwiseOp = VM_BIT_OP_AND; break;
+      case 8: bitwiseOp = VM_BIT_OP_OR; break;
+      case 9: bitwiseOp = VM_BIT_OP_XOR; break;
+      case 10: bitwiseOp = VM_BIT_OP_NOT; break;
+      case 11: bitwiseOp = VM_BIT_OP_SHL; break;
+      case 12: bitwiseOp = VM_BIT_OP_SHR_ARITHMETIC; break;
+      case 13: bitwiseOp = VM_BIT_OP_SHR_LOGICAL; break;
+      default: return MVM_E_INVALID_BYTECODE;
+    }
+    if (err == MVM_E_SUCCESS && isBinary && bitwiseOp >= VM_BIT_OP_END_OF_SHIFT_OPERATORS) {
+      err = vm_numericApplyContext(vm, &right, context);
+    }
+    if (err != MVM_E_SUCCESS) return err;
+    err = vm_numericBitwise(vm, bitwiseOp, &left, &right, &output);
+  } else {
+    vm_TeNumberOp numberOp;
+    if (isUnaryPlus) numberOp = VM_NUM_OP_UNARY_PLUS;
+    else if (isUnary) numberOp = VM_NUM_OP_NEGATE;
+    else if (operationIndex <= 5) numberOp = (vm_TeNumberOp)(VM_NUM_OP_ADD_NUM + operationIndex);
+    else return MVM_E_INVALID_BYTECODE;
+    err = isUnary || isUnaryPlus
+      ? vm_numericUnary(vm, numberOp, &right, pContext, &output)
+      : vm_numericBinary(vm, numberOp, &left, &right, pContext, &output);
+  }
+  if (err != MVM_E_SUCCESS) return err;
+  if (typed) {
+    err = vm_numericCast(vm, &output, context, &output);
+    if (err != MVM_E_SUCCESS) return err;
+  }
+  return vm_numericWriteContextResult(vm, &output, pContext, resultValue);
+}
+
+mvm_TeError mvm_newNumeric(mvm_VM* vm, const mvm_NumericValue* value, mvm_Value* out) {
+  if (!vm || !value || !out) return MVM_E_INVALID_ARGUMENTS;
+  VM* vmInternal = (VM*)vm;
+  vm_TsNumeric numeric;
+  memset(&numeric, 0, sizeof(numeric));
+  switch (value->kind) {
+    case MVM_NUM_ORDINARY:
+      if (value->width != 0) return MVM_E_INVALID_ARGUMENTS;
+#if MVM_SUPPORT_FLOAT
+      numeric.kind = VM_NUM_ORDINARY;
+      numeric.value.f64 = value->value.f64;
+#else
+      if (value->value.f64 != value->value.f64 || value->value.f64 < (double)INT32_MIN || value->value.f64 > (double)INT32_MAX ||
+          (double)(int32_t)value->value.f64 != value->value.f64) return MVM_E_OPERATION_REQUIRES_FLOAT_SUPPORT;
+      *out = mvm_newInt32(vm, (int32_t)value->value.f64);
+      return MVM_E_SUCCESS;
+#endif
+      break;
+    case MVM_NUM_SIGNED:
+    case MVM_NUM_UNSIGNED:
+      if (value->width < 1 || value->width > 64 || !vmInternal->numericTypes) return MVM_E_INVALID_ARGUMENTS;
+      vm_setIntegerNumeric(&numeric, value->kind == MVM_NUM_SIGNED, value->width,
+        value->kind == MVM_NUM_SIGNED ? (uint64_t)value->value.i : value->value.u);
+      break;
+    case MVM_NUM_FLOAT:
+      if (value->width != 32 && value->width != 64) return MVM_E_INVALID_ARGUMENTS;
+#if MVM_SUPPORT_FLOAT
+      if (!vmInternal->numericTypes) return MVM_E_INVALID_ARGUMENTS;
+      numeric.kind = VM_NUM_FLOAT;
+      numeric.width = value->width;
+      if (value->width == 32) numeric.value.f32 = value->value.f32;
+      else numeric.value.f64 = value->value.f64;
+#else
+      return MVM_E_OPERATION_REQUIRES_FLOAT_SUPPORT;
+#endif
+      break;
+    default:
+      return MVM_E_INVALID_ARGUMENTS;
+  }
+  return vm_writeNumeric(vmInternal, &numeric, out);
+}
+
+mvm_TeError mvm_getNumeric(mvm_VM* vm, mvm_Value value, mvm_NumericValue* out) {
+  if (!vm || !out) return MVM_E_INVALID_ARGUMENTS;
+  vm_TsNumeric numeric;
+  TeError err = vm_readNumeric((VM*)vm, value, &numeric);
+  if (err == MVM_E_NUMERIC_ERROR) return MVM_E_TYPE_ERROR;
+  if (err != MVM_E_SUCCESS) return err;
+  memset(out, 0, sizeof(*out));
+  out->kind = (mvm_TeNumericKind)numeric.kind;
+  out->width = numeric.kind == VM_NUM_ORDINARY ? 0 : numeric.width;
+  switch (numeric.kind) {
+    case VM_NUM_ORDINARY: out->value.f64 = numeric.value.f64; break;
+    case VM_NUM_SIGNED: out->value.i = numeric.value.i; break;
+    case VM_NUM_UNSIGNED: out->value.u = numeric.value.u; break;
+    case VM_NUM_FLOAT:
+      if (numeric.width == 32) out->value.f32 = numeric.value.f32;
+      else out->value.f64 = numeric.value.f64;
+      break;
+  }
+  return MVM_E_SUCCESS;
+}
+
+#if MVM_SUPPORT_FLOAT
+int32_t mvm_floatToInt32(MVM_FLOAT64 value) {
   CODE_COVERAGE(486); // Hit
   if (MVM_FLOAT_IS_FINITE(value)) {
     CODE_COVERAGE(487); // Hit
@@ -7146,34 +8177,14 @@ int32_t mvm_float64ToInt32(MVM_FLOAT64 value) {
 
 Value mvm_newNumber(VM* vm, MVM_FLOAT64 value) {
   CODE_COVERAGE(28); // Hit
-  if (MVM_FLOAT_IS_NAN(value)) {
-    CODE_COVERAGE(298); // Hit
-    return VM_VALUE_NAN;
-  } else {
-    CODE_COVERAGE(517); // Hit
-  }
-
-  if (MVM_FLOAT_IS_NEG_ZERO(value)) {
-    CODE_COVERAGE(299); // Hit
-    return VM_VALUE_NEG_ZERO;
-  } else {
-    CODE_COVERAGE(518); // Hit
-  }
-
-  // Doubles are very expensive to compute, so at every opportunity, we'll check
-  // if we can coerce back to an integer
-  int32_t valueAsInt = mvm_float64ToInt32(value);
-  if (value == (MVM_FLOAT64)valueAsInt) {
-    CODE_COVERAGE(300); // Hit
-    return mvm_newInt32(vm, valueAsInt);
-  } else {
-    CODE_COVERAGE(301); // Hit
-  }
-
-  MVM_FLOAT64* pResult = GC_ALLOCATE_TYPE(vm, MVM_FLOAT64, TC_REF_FLOAT64);
-  *pResult = value;
-
-  return ShortPtr_encode(vm, pResult);
+  vm_TsNumeric numeric;
+  Value result;
+  memset(&numeric, 0, sizeof numeric);
+  numeric.kind = VM_NUM_ORDINARY;
+  numeric.value.f64 = (double)value;
+  TeError err = vm_writeNumeric(vm, &numeric, &result);
+  VM_ASSERT(vm, err == MVM_E_SUCCESS);
+  return result;
 }
 #endif // MVM_SUPPORT_FLOAT
 
@@ -7209,13 +8220,18 @@ bool mvm_toBool(VM* vm, Value value) {
       VM_ASSERT(vm, vm_readInt32(vm, type, value) != 0);
       return false;
     }
-    case TC_REF_FLOAT64: {
+    case TC_REF_NUMBER: {
       CODE_COVERAGE_UNTESTED(306); // Not hit
-      #if MVM_SUPPORT_FLOAT
-        // Double can't be zero, otherwise it would be encoded as an int14
-        VM_ASSERT(vm, mvm_toFloat64(vm, value) != 0);
-      #endif
-      return false;
+      vm_TsNumeric numeric;
+      if (vm_readNumeric(vm, value, &numeric) != MVM_E_SUCCESS) return false;
+      if (numeric.kind == VM_NUM_SIGNED) return numeric.value.i != 0;
+      if (numeric.kind == VM_NUM_UNSIGNED) return numeric.value.u != 0;
+#if MVM_SUPPORT_FLOAT
+      double number = vm_numericAsDouble(&numeric);
+      return number != 0 && !isnan(number);
+#else
+      return true;
+#endif
     }
     case TC_REF_INTERNED_STRING:
     case TC_REF_STRING: {
@@ -8625,7 +9641,7 @@ TeError strToInt32(mvm_VM* vm, mvm_Value value, int32_t* out_result) {
   // This function cannot handle floating point numbers
   if (isFloat) {
     CODE_COVERAGE_UNTESTED(741); // Not hit
-    return MVM_E_FLOAT64;
+    return MVM_E_FLOAT;
   }
 
   CODE_COVERAGE(656); // Hit
@@ -8647,9 +9663,9 @@ TeError toInt32Internal(mvm_VM* vm, mvm_Value value, int32_t* out_result) {
       *out_result = vm_readInt32(vm, type, value);
       return MVM_E_SUCCESS;
     }
-    MVM_CASE(TC_REF_FLOAT64): {
+    MVM_CASE(TC_REF_NUMBER): {
       CODE_COVERAGE(402); // Hit
-      return MVM_E_FLOAT64;
+      return MVM_E_FLOAT;
     }
     MVM_CASE(TC_REF_STRING):
     MVM_CASE(TC_REF_INTERNED_STRING): {
@@ -8756,7 +9772,7 @@ int32_t mvm_toInt32(mvm_VM* vm, mvm_Value value) {
     CODE_COVERAGE_UNTESTED(423); // Not hit
   }
 
-  VM_ASSERT(vm, deepTypeOf(vm, value) == TC_REF_FLOAT64);
+  VM_ASSERT(vm, deepTypeOf(vm, value) == TC_REF_NUMBER);
   #if MVM_SUPPORT_FLOAT
     return (int32_t)mvm_toFloat64(vm, value);
   #else // !MVM_SUPPORT_FLOAT
@@ -8769,26 +9785,10 @@ int32_t mvm_toInt32(mvm_VM* vm, mvm_Value value) {
 #if MVM_SUPPORT_FLOAT
 MVM_FLOAT64 mvm_toFloat64(mvm_VM* vm, mvm_Value value) {
   CODE_COVERAGE(58); // Hit
-  int32_t result;
-  TeError err = toInt32Internal(vm, value, &result);
-  if (err == MVM_E_SUCCESS) {
-    CODE_COVERAGE(424); // Hit
-    return result;
-  } else if (err == MVM_E_NAN) {
-    CODE_COVERAGE(425); // Hit
-    return MVM_FLOAT64_NAN;
-  } else if (err == MVM_E_NEG_ZERO) {
-    CODE_COVERAGE(426); // Hit
-    return MVM_FLOAT_NEG_ZERO;
-  } else {
-    CODE_COVERAGE(427); // Hit
-  }
-
-  VM_ASSERT(vm, deepTypeOf(vm, value) == TC_REF_FLOAT64);
-  LongPtr lpFloat = DynamicPtr_decode_long(vm, value);
-  MVM_FLOAT64 f;
-  memcpy_long(&f, lpFloat, sizeof f);
-  return f;
+  vm_TsNumeric numeric;
+  TeError err = vm_readNumeric(vm, value, &numeric);
+  VM_ASSERT(vm, err == MVM_E_SUCCESS);
+  return (MVM_FLOAT64)vm_numericAsDouble(&numeric);
 }
 #endif // MVM_SUPPORT_FLOAT
 
@@ -8805,7 +9805,7 @@ typedef enum TeEqualityAlgorithm {
 static const TeEqualityAlgorithm equalityAlgorithmByTypeCode[TC_END] = {
   EA_NONE,                       // TC_REF_TOMBSTONE          = 0x0
   EA_COMPARE_PTR_VALUE_AND_TYPE, // TC_REF_INT32              = 0x1
-  EA_COMPARE_PTR_VALUE_AND_TYPE, // TC_REF_FLOAT64            = 0x2
+  EA_COMPARE_PTR_VALUE_AND_TYPE, // TC_REF_NUMBER           = 0x2
   EA_COMPARE_STRING,             // TC_REF_STRING             = 0x3
   EA_COMPARE_STRING,             // TC_REF_INTERNED_STRING    = 0x4
   EA_COMPARE_REFERENCE,          // TC_REF_FUNCTION           = 0x5
@@ -8838,6 +9838,13 @@ bool mvm_equal(mvm_VM* vm, mvm_Value a, mvm_Value b) {
 
   TeTypeCode aType = deepTypeOf(vm, a);
   TeTypeCode bType = deepTypeOf(vm, b);
+  if (vm->numericTypes && vm_isNumberType(aType) && vm_isNumberType(bType)) {
+    vm_TsNumeric numberA, numberB;
+    if (vm_readNumeric(vm, a, &numberA) != MVM_E_SUCCESS || vm_readNumeric(vm, b, &numberB) != MVM_E_SUCCESS) {
+      return false;
+    }
+    return vm_compareNumericExact(vm, &numberA, &numberB) == 0;
+  }
   TeEqualityAlgorithm algorithmA = equalityAlgorithmByTypeCode[aType];
   TeEqualityAlgorithm algorithmB = equalityAlgorithmByTypeCode[bType];
 

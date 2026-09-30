@@ -3,6 +3,8 @@
 // Implement in JS
 extern double fmod(double x, double y);
 extern double pow(double x, double y);
+extern float fmodf(float x, float y);
+extern float powf(float x, float y);
 
 
 #define INFINITY  __builtin_inff()

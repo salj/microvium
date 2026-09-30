@@ -66,34 +66,23 @@ fixes and improvement from the original github or npm repository.
 #define MVM_NATIVE_POINTER_IS_16_BIT 0
 
 /**
- * Set to 1 to compile in support for floating point operations (64-bit). This
- * adds significant cost in smaller devices, but is required if you want the VM
- * to be compliant with the ECMAScript standard.
+ * Set to 1 to compile in support for floating point operations. This adds
+ * significant cost in smaller devices.
  *
  * When float support is disabled, operations on floats will throw.
  */
+#ifndef MVM_SUPPORT_FLOAT
 #define MVM_SUPPORT_FLOAT 1
+#endif
 
 #if MVM_SUPPORT_FLOAT
 
 /**
  * The type to use for double-precision floating point. Note that anything other
  * than an IEEE 754 double-precision float is not compliant with the ECMAScript
- * spec and results may not always be as expected. Also remember that the
- * bytecode is permitted to have floating point literals embedded in it, and
- * these must match the exact format specification used here if doubles are to
- * persist correctly across a snapshot.
- *
- * Note that on some embedded systems, the `double` type is actually 32-bit, so
- * this may need to be `long double` or whatever the equivalent 64-bit type is
- * on your system.
+ * spec and results may not always be as expected. Snapshot numeric flavors are
+ * independent of the host convenience type; typed values use the numeric FFI.
  */
-#define MVM_FLOAT64 double
-
-/**
- * Value to use for NaN
- */
-#define MVM_FLOAT64_NAN ((MVM_FLOAT64)(INFINITY * 0.0))
 
 #endif // MVM_SUPPORT_FLOAT
 

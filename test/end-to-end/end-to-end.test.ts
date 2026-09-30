@@ -92,6 +92,82 @@ suite('end-to-end', function () {
 
     runner(testFriendlyName, testContainer[testFriendlyName]);
   }
+
+  test('mixed numeric values survive snapshotting and execute natively', () => {
+    const source = `
+      const bag = {};
+      bag.u = /*u12*/ 4095;
+      bag.i = /*i7*/ -64;
+      bag.f = /*f32*/ 1.0000001;
+
+      vmExport(1, () => /*u12*/ bag.u + 1);
+      vmExport(2, () => (/*u64*/ 9007199254740993) > (/*u64*/ 9007199254740992));
+      vmExport(3, () => /*f64*/ bag.f + /*(f64)*/ 1);
+      vmExport(4, () => Number.kind(bag.u));
+      vmExport(5, () => Number.kind(bag.i));
+      vmExport(6, () => Number.kind(bag.f));
+      vmExport(7, () => Number.kind(/*f64*/ bag.f + /*(f64)*/ 1));
+    `;
+    const vm = VirtualMachineFriendly.create();
+    addDefaultGlobals(vm);
+    vm.globalThis.vmExport = vm.vmExport;
+    vm.evaluateModule({ sourceText: source, debugFilename: '<numeric-integration>' });
+
+    const snapshot = vm.createSnapshot();
+    const decoded = decodeSnapshot(snapshot);
+    assert.isTrue(decoded.snapshotInfo.flags.has(IL.ExecutionFlag.NumericTypes));
+
+    const expected = [0, true, 2.0000001192092896, 'u12', 'i7', 'f32', 'f64'];
+    const referenceResults = expected.map((_, index) => vm.resolveExport(index + 1)());
+    assert.deepEqual(referenceResults, expected);
+
+    const nativeVM = Microvium.restore(snapshot);
+    const nativeResults = expected.map((_, index) => nativeVM.resolveExport(index + 1)());
+    assert.deepEqual(nativeResults, expected);
+  });
+
+  test('legacy f64 source remains engine-minor-0 and runs on the new runtime', () => {
+    const vm = VirtualMachineFriendly.create();
+    vm.globalThis.vmExport = vm.vmExport;
+    vm.evaluateModule({
+      sourceText: 'vmExport(1, () => 1.25 + 0.5);',
+      debugFilename: '<legacy-f64-integration>',
+    });
+
+    const snapshot = vm.createSnapshot();
+    assert.equal(snapshot.data.readUInt8(2), 0);
+    assert.isFalse(decodeSnapshot(snapshot).snapshotInfo.flags.has(IL.ExecutionFlag.NumericTypes));
+    assert.equal(Microvium.restore(snapshot).resolveExport(1)(), 1.75);
+  });
+
+  test('mixed precision and integer widths match in the reference and native VMs', () => {
+    const source = fs.readFileSync('examples/mixed-numeric-types.mvm.js', 'utf8');
+    const vm = VirtualMachineFriendly.create();
+    addDefaultGlobals(vm);
+    vm.globalThis.vmExport = vm.vmExport;
+    vm.evaluateModule({ sourceText: source, debugFilename: 'examples/mixed-numeric-types.mvm.js' });
+
+    const expected = [
+      16777216, 'f32',
+      16777217, 'f64',
+      1,
+      16777216, 'f32',
+      0, 'u5',
+      -64, 'i7',
+      1, 'u12',
+      -68719476736, 'i37',
+      256, 'u12',
+      true, 'u64',
+      0, 0, 1,
+    ];
+    const referenceResults = expected.map((_, index) => vm.resolveExport(index + 1)());
+    assert.deepEqual(referenceResults, expected);
+
+    const snapshot = vm.createSnapshot();
+    const nativeVM = Microvium.restore(snapshot);
+    const nativeResults = expected.map((_, index) => nativeVM.resolveExport(index + 1)());
+    assert.deepEqual(nativeResults, expected);
+  });
 });
 
 async function runTest(anySkips: boolean, testArtifactDir: string, yamlText: string | undefined, src: string, testFilenameRelativeToCurDir: string, meta: TestMeta) {

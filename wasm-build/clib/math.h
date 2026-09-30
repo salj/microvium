@@ -3,6 +3,8 @@
 // Implement in JS
 extern double fmod(double x, double y);
 extern double pow(double x, double y);
+extern double ldexp(double x, int exponent);
+extern double trunc(double x);
 extern float fmodf(float x, float y);
 extern float powf(float x, float y);
 

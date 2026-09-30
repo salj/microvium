@@ -11,7 +11,10 @@ export async function createBrowserRuntime(moduleBytes, hostImports) {
         return result;
       },
       fmod: (a, b) => a % b,
-      pow: (a, b) => Math.pow(a, b)
+      pow: (a, b) => Math.pow(a, b),
+      fmodf: (a, b) => a % b,
+      powf: (a, b) => Math.pow(a, b),
+      ldexp: (value, exponent) => value * Math.pow(2, exponent)
     }
   });
 

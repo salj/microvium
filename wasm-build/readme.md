@@ -8,10 +8,11 @@ npm run test:runtime-wasm
 ```
 
 The output is `wasm-build/build/microvium-runtime.wasm`. It imports a four-page
-WebAssembly memory and three functions from `env`: `mvm_wasm_host_import(id,
-number)`, `fmod(a, b)`, and `pow(a, b)`. The C runtime reserves one aligned 64kB
-page for VM RAM and one for snapshot bytes. Other memory holds the C globals
-and stack.
+WebAssembly memory and six functions from `env`: `mvm_wasm_host_import(id,
+number)`, `fmod(a, b)`, `pow(a, b)`, `fmodf(a, b)`, `powf(a, b)`, and
+`ldexp(value, exponent)`. The browser runtime wrapper supplies the math imports.
+The C runtime reserves one aligned 64kB page for VM RAM and one for snapshot
+bytes. Other memory holds the C globals and stack.
 
 The browser-facing exports are:
 

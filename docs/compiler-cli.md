@@ -8,6 +8,21 @@ mise exec -- npm ci
 mise exec -- npm run build:compiler-wasm
 ```
 
+The compiler build can choose the default float width for ordinary Number
+values. It defaults to f64. Build with an f32 ordinary Number default using:
+
+```sh
+MVM_DEFAULT_FLOAT_WIDTH=32 mise exec -- npm run build:compiler-wasm
+```
+
+`MVM_DEFAULT_FLOAT_WIDTH` accepts only `32` or `64`. The build writes this
+compiler default to `dist-web/compiler-config.json`. It does not configure the
+runtime: one compiler and runtime support explicit f32 and f64 values together.
+Source files can override the ordinary Number default with the
+`/* microvium: default-float=f32 */` or `/* microvium: default-float=f64 */`
+header directive. See [Numeric types](../doc/numeric-types.md) for the
+directive's placement rules and the arithmetic semantics.
+
 The build fetches the pinned Javy executable for the host if it is not already
 present.
 Install Wasmer or Wasmtime separately and make its command available on `PATH`.

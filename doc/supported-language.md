@@ -21,6 +21,14 @@ Note: the most up-to-date authority on supported features is the [set of test sc
  - Some `class` features: class declarations, constructors and methods.
  - See also [supported builtins](./supported-builtins.md)
 
+## Numeric types
+
+Numbers can carry `iN`, `uN`, `f32`, or `f64` flavors while remaining ordinary
+JavaScript `number` values (`typeof x === "number"`). Flavors affect conversion
+and arithmetic, not variable declarations. The syntax distinguishes expression
+boundaries from casts; see [Numeric types](./numeric-types.md) for the rules and
+examples.
+
 ## NOT Supported
 
 Some notable JavaScript features that are NOT supported in Microvium (some of these may be supported in the future):

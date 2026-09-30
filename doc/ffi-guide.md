@@ -38,6 +38,7 @@ See [handles-and-garbage-collection.md](handles-and-garbage-collection.md) for m
 The host can create a new JavaScript value using one of these FFI functions:
 
 - `mvm_newNumber`
+- `mvm_newNumeric`
 - `mvm_newInt32`
 - `mvm_newBoolean`
 - `mvm_newString`
@@ -53,10 +54,51 @@ When you have an `mvm_Value`, you can read its contents using one of these Micro
 - `mvm_toBool`
 - `mvm_toInt32`
 - `mvm_toFloat64`
+- `mvm_getNumeric`
 - `mvm_toStringUtf8`
 - `mvm_uint8ArrayToBytes`
 - `mvm_typeOf`
 - `mvm_isNaN`
+
+### Exact numeric flavors
+
+`mvm_newNumber` and `mvm_toFloat64` are the binary64 convenience API. The
+snapshot's ordinary-number default applies to values created with
+`mvm_newNumber`. Converting a typed integer above `2^53` with `mvm_toFloat64`
+can lose precision.
+
+Use `mvm_newNumeric` and `mvm_getNumeric` to preserve the exact flavor and
+integer payload:
+
+```c
+#include <stdint.h>
+#include <stdlib.h>
+#include "microvium.h"
+
+mvm_NumericValue input = {0};
+input.kind = MVM_NUM_UNSIGNED;
+input.width = 64;
+input.value.u = UINT64_C(9007199254740993);
+
+mvm_Value value;
+mvm_TeError err = mvm_newNumeric(vm, &input, &value);
+if (err != MVM_E_SUCCESS) abort();
+
+mvm_NumericValue output;
+err = mvm_getNumeric(vm, value, &output);
+if (err != MVM_E_SUCCESS) abort();
+// output.kind == MVM_NUM_UNSIGNED
+// output.width == 64
+// output.value.u == UINT64_C(9007199254740993)
+```
+
+`mvm_NumericValue` uses `MVM_NUM_ORDINARY` with width 0, `MVM_NUM_SIGNED` or
+`MVM_NUM_UNSIGNED` with widths 1 through 64, and `MVM_NUM_FLOAT` with width 32
+or 64. `mvm_newNumeric` normalizes integer input to the declared width.
+`mvm_getNumeric` returns `MVM_E_TYPE_ERROR` for non-numbers. Typed flavors
+require a snapshot with numeric-types support. As with other allocated VM
+values, keep a handle if the value must survive later VM calls; see
+[Handles](./handles-and-garbage-collection.md).
 
 
 ## Exporting JS functions from the VM
@@ -400,5 +442,3 @@ fs.writeFileSync('my-glue-code.c', cFile + '\n');
 ```
 
 A more comprehensive example exists [here](https://github.com/coder-mike/microvium-ffi-example) in C++.
-
-

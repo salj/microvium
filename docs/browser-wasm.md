@@ -53,6 +53,15 @@ the generated browser deliverable and their licenses.
 
 ## ABI limits
 
-The browser runtime wrapper currently marshals numeric arguments, numeric
-results, and numeric host calls. It does not provide general object or string
-marshalling, nor does the browser compiler expose Microvium's debugger.
+The browser runtime wrapper accepts one numeric argument when calling an
+exported function and returns one numeric result. A host import also accepts
+one numeric argument and must return a number. The wrapper does not provide
+general object or string marshalling, nor does the browser compiler expose
+Microvium's debugger.
+
+The JavaScript and WebAssembly boundary transports binary64 numbers and does
+not preserve a Microvium numeric flavor. On input, the C glue calls
+`mvm_newNumber`, which applies the snapshot's ordinary-number default. On
+output, it calls `mvm_toFloat64`. An exact typed integer above `2^53` can lose
+precision when returned through this wrapper. The VM and C API support wider
+exact numeric values; this limit is specific to the browser wrapper ABI.

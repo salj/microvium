@@ -70,9 +70,9 @@ Napi::Value VM::Value::toNumber(const Napi::CallbackInfo& info) {
   auto env = info.Env();
   mvm_Value value = mvm_handleGet(&_handle);
 
-  double d = mvm_toFloat64(_vm, value);
+  const MVM_FLOAT64 n = mvm_toFloat64(_vm, value);
 
-  return Napi::Number::New(env, d);
+  return Napi::Number::New(env, static_cast<double>(n));
 }
 
 Napi::Value VM::Value::toBoolean(const Napi::CallbackInfo& info) {

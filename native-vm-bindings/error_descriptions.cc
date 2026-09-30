@@ -24,7 +24,7 @@ std::map<mvm_TeError, std::string> errorDescriptions = {
   { MVM_E_RANGE_ERROR, "MVM_E_RANGE_ERROR" },
   { MVM_E_DETACHED_EPHEMERAL, "MVM_E_DETACHED_EPHEMERAL" },
   { MVM_E_TARGET_IS_NOT_A_VM_FUNCTION, "MVM_E_TARGET_IS_NOT_A_VM_FUNCTION" },
-  { MVM_E_FLOAT64, "MVM_E_FLOAT64" },
+  { MVM_E_FLOAT, "MVM_E_FLOAT" },
   { MVM_E_NAN, "MVM_E_NAN" },
   { MVM_E_NEG_ZERO, "MVM_E_NEG_ZERO" },
   { MVM_E_OPERATION_REQUIRES_FLOAT_SUPPORT, "MVM_E_OPERATION_REQUIRES_FLOAT_SUPPORT" },
@@ -59,4 +59,5 @@ std::map<mvm_TeError, std::string> errorDescriptions = {
   { MVM_E_TYPE_ERROR_AWAIT_NON_PROMISE, "Can only await a promise in Microvium" },
   { MVM_E_HEAP_CORRUPT, "Microvium's internal heap is not in a consistent state" },
   { MVM_E_CLASS_PROTOTYPE_MUST_BE_NULL_OR_OBJECT, "The prototype property of a class must be null or a plain object" },
+  { MVM_E_UNINITIALIZED_GLOBAL, "A global variable was not set before it was used" },
 };

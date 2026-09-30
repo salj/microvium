@@ -20,6 +20,8 @@ export function addBuiltinGlobals(vm: VirtualMachineFriendly, noLib: boolean = f
   global.undefined = undefined;
   const Number = global.Number = vm.newObject();
   Number.isNaN = runtimeLib.Number_isNaN;
+  Number.kind = global.Microvium.numericKindOf;
+  Number.isInteger = global.Microvium.numericIsInteger;
 
   if (!noLib) {
     const arrayPrototype = vm.newObject();

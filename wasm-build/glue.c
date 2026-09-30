@@ -22,7 +22,7 @@ void mvm_fatalError(int error) {
 mvm_TeError invokeHost(mvm_VM* vm, mvm_HostFunctionID hostFunctionID, mvm_Value* result, mvm_Value* args, uint8_t argCount) {
   if (argCount != 1) return MVM_E_INVALID_ARGUMENTS;
   if (mvm_typeOf(vm, args[0]) != VM_T_NUMBER) return MVM_E_TYPE_ERROR;
-  const double argument = mvm_toFloat64(vm, args[0]);
+  const MVM_FLOAT64 argument = mvm_toFloat64(vm, args[0]);
   const double hostResult = mvm_wasm_host_import(hostFunctionID, argument);
   *result = mvm_newNumber(vm, hostResult);
   return MVM_E_SUCCESS;

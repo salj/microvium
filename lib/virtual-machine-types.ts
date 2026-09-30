@@ -52,6 +52,8 @@ export interface ExternalFrame {
   result: IL.Value;
 }
 
+export type FloatWidth = 32 | 64;
+
 export interface VirtualMachineOptions {
   // Function called before every operation
   trace?: (operation: IL.Operation) => void;
@@ -63,6 +65,7 @@ export interface VirtualMachineOptions {
   noLib?: boolean;
   // For debug purposes: output the IL of every compiled unit
   outputIL?: boolean;
+  defaultFloatWidth?: FloatWidth;
 }
 
 export interface GlobalDefinitions {

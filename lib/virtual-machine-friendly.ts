@@ -61,6 +61,13 @@ export class VirtualMachineFriendly implements Microvium {
     //   console.log('Microvium-debug client connected');
     // }
     this.vm = new VM.VirtualMachine(resumeFromSnapshot, innerResolve, opts, debugServer);
+    directHostFunctionCalls.set(this.vmExport, (vm, args) => {
+      const exportID = args[1]
+        ? vmValueToHost(vm, args[1], undefined)
+        : undefined;
+      validateExportID(exportID);
+      vm.vmExport(exportID, args[2] ?? IL.undefinedValue);
+    });
     this._global = new Proxy<any>({}, new GlobalWrapper(this.vm));
     addBuiltinGlobals(this, opts.noLib);
   }
@@ -135,8 +142,7 @@ export class VirtualMachineFriendly implements Microvium {
   }
 
   public vmExport = (exportID: IL.ExportID, value: any) => {
-    if (typeof exportID !== 'number' || (exportID | 0) !== exportID || exportID < 0 || exportID > 65535)
-      throw new Error(`ID for \`vmExport\` must be an integer in the range 0 to 65535. Received ${exportID}`);
+    validateExportID(exportID);
 
     const vmValue = hostValueToVM(this.vm, value);
     this.vm.vmExport(exportID, vmValue);
@@ -176,9 +182,14 @@ export class VirtualMachineFriendly implements Microvium {
   public get globalThis(): any { return this._global; }
 }
 
+type DirectHostFunctionCall = (vm: VM.VirtualMachine, args: IL.Value[]) => IL.Value | void;
+const directHostFunctionCalls = new WeakMap<Function, DirectHostFunctionCall>();
+
 function hostFunctionToVMHandler(vm: VM.VirtualMachine, func: Function): VM.HostFunctionHandler {
   return {
     call(args) {
+      const directCall = directHostFunctionCalls.get(func);
+      if (directCall) return directCall(vm, args);
       if (!func) {
         return invalidOperation('The given host function does not have a compile-time implementation.');
       }
@@ -190,14 +201,21 @@ function hostFunctionToVMHandler(vm: VM.VirtualMachine, func: Function): VM.Host
   }
 }
 
+function validateExportID(exportID: any): asserts exportID is IL.ExportID {
+  if (typeof exportID !== 'number' || (exportID | 0) !== exportID || exportID < 0 || exportID > 65535) {
+    throw new Error(`ID for \`vmExport\` must be an integer in the range 0 to 65535. Received ${exportID}`);
+  }
+}
+
 function vmValueToHost(vm: VM.VirtualMachine, value: IL.Value, nameHint: string | undefined): any {
   switch (value.type) {
     case 'BooleanValue':
-    case 'NumberValue':
     case 'UndefinedValue':
     case 'StringValue':
     case 'NullValue':
       return value.value;
+    case 'NumberValue':
+      return typeof value.value === 'bigint' ? Number(value.value) : value.value;
     case 'FunctionValue':
     case 'HostFunctionValue':
     case 'ResumePoint':

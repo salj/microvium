@@ -2,6 +2,7 @@ import * as IL from './il';
 import { blockTerminatingOpcodes } from './il-opcodes';
 import { assertUnreachable, stringifyIdentifier, stringifyStringLiteral, notUndefined, unexpected, hardAssert, entries, entriesInOrder, invalidOperation } from './utils';
 import _ from 'lodash';
+import { numericTypeName } from './numeric-types';
 
 export interface StringifyILOpts {
   showComments?: boolean;
@@ -162,6 +163,7 @@ export function stringifyOperand(operand: IL.Operand): string {
     case 'IndexOperand': return 'index ' + operand.index;
     case 'NameOperand': return `name '${operand.name}'`;
     case 'OpOperand': return `op '${operand.subOperation}'`;
+    case 'NumericTypeOperand': return `numeric type '${numericTypeName(operand.numericType)}'${operand.contextMode ? ` (${operand.contextMode} context)` : ''}`;
     default: return assertUnreachable(operand);
   }
 }
@@ -201,6 +203,7 @@ export function stringifyValue(value: IL.Value): string {
     case 'BooleanValue':
       return value.value ? 'true' : 'false';
     case 'NumberValue': {
+      if (typeof value.value === 'bigint') return value.value.toString();
       if (Object.is(value.value, -0)) {
         return '-0';
       } else if (value.value === Infinity) {

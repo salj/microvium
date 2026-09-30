@@ -11,6 +11,8 @@ import { SynchronousWebSocketServer } from './synchronous-ws-server';
 import { isSInt32, isUInt8, mvm_TeType } from './runtime-types';
 import { encodeSnapshot } from './encode-snapshot';
 import { maxOperandCount, minOperandCount } from './il-opcodes';
+import { binaryNumeric, compareNumeric, convertNumeric, NumericError, numericTypeName, unaryNumeric } from './numeric-types';
+import type { NumericValueData } from './numeric-types';
 export * from "./virtual-machine-types";
 import fs from 'fs';
 
@@ -109,13 +111,19 @@ export class VirtualMachine {
     opts: VM.VirtualMachineOptions,
     debugServer?: SynchronousWebSocketServer
   ) {
+    const defaultFloatWidth = opts.defaultFloatWidth ?? 64;
     this.opts = {
       overflowChecks: true,
+      defaultFloatWidth,
       executionFlags: [IL.ExecutionFlag.FloatSupport],
       ...opts
     };
+    this.opts.defaultFloatWidth = defaultFloatWidth;
     if (this.opts.overflowChecks) {
       this.opts.executionFlags?.push(IL.ExecutionFlag.CompiledWithOverflowChecks);
+    }
+    if (defaultFloatWidth === 32) {
+      this.opts.executionFlags?.push(IL.ExecutionFlag.NumericTypes);
     }
 
     if (resumeFromSnapshot) {
@@ -151,7 +159,12 @@ export class VirtualMachine {
     this.moduleCache.set(moduleSource, moduleObject);
 
     const filename = moduleSource.debugFilename || '<no file>';
-    const { unit } = compileScript(filename, moduleSource.sourceText);
+    const { unit, numericTypesUsed } = compileScript(filename, moduleSource.sourceText, {
+      defaultFloatWidth: this.opts.defaultFloatWidth ?? 64,
+    });
+    if (numericTypesUsed && this.opts.executionFlags && !this.opts.executionFlags.includes(IL.ExecutionFlag.NumericTypes)) {
+      this.opts.executionFlags.push(IL.ExecutionFlag.NumericTypes);
+    }
 
     if (this.opts.outputIL && moduleSource.debugFilename && !moduleSource.debugFilename.startsWith('<') /* E.g. <builtins> */) {
       fs.writeFileSync(moduleSource.debugFilename + '.il', stringifyUnit(unit, {
@@ -256,6 +269,11 @@ export class VirtualMachine {
       builtins
     });
 
+    const usesNumericBytecode = [...functions.values()].some(func =>
+      Object.values(func.blocks).some(block => block.operations.some(op => op.opcode.startsWith('Numeric'))));
+    const flags = new Set<IL.ExecutionFlag>(this.opts.executionFlags);
+    if (usesNumericBytecode) flags.add(IL.ExecutionFlag.NumericTypes);
+
     // Check for any uncreated global variables
     this.checkGlobalsAreCreated(globalSlots);
 
@@ -264,7 +282,8 @@ export class VirtualMachine {
       functions,
       exports,
       allocations,
-      flags: new Set<IL.ExecutionFlag>(this.opts.executionFlags),
+      flags,
+      numericOptions: { defaultFloatWidth: this.opts.defaultFloatWidth ?? 64 },
       builtins
     };
 
@@ -902,6 +921,13 @@ export class VirtualMachine {
       case 'LoadVar'      : return this.operationLoadVar(operands[0]);
       case 'New'          : return this.operationNew(operands[0]);
       case 'Nop'          : return this.operationNop(operands[0]);
+      case 'NumericBinOp'      : return this.operationNumericBinOp(operands[0], operands[1]);
+      case 'NumericBinOpTyped' : return this.operationNumericBinOpTyped(operands[0], operands[1]);
+      case 'NumericCast'       : return this.operationNumericCast(operands[0]);
+      case 'NumericIsInteger'  : return this.operationNumericIsInteger();
+      case 'NumericKindOf'     : return this.operationNumericKindOf();
+      case 'NumericUnOp'       : return this.operationNumericUnOp(operands[0], operands[1]);
+      case 'NumericUnOpTyped'  : return this.operationNumericUnOpTyped(operands[0], operands[1]);
       case 'ObjectGet'    : return this.operationObjectGet();
       case 'ObjectKeys'   : return this.operationObjectKeys();
       case 'ObjectNew'    : return this.operationObjectNew();
@@ -1011,6 +1037,11 @@ export class VirtualMachine {
           return this.ilError('Expected sub-operation operand');
         }
         return operand.subOperation;
+      case 'NumericTypeOperand':
+        if (operand.type !== 'NumericTypeOperand') {
+          return this.ilError('Expected numeric type operand');
+        }
+        return operand;
       default: assertUnreachable(expectedType);
     }
   }
@@ -1024,7 +1055,7 @@ export class VirtualMachine {
     if (lengthValue.type !== 'NumberValue') {
       this.runtimeError('New Uint8Array must be created with integer length');
     }
-    const length = lengthValue.value;
+    const length = Number(lengthValue.value);
     if ((length | 0) !== length) {
       this.runtimeError('New Uint8Array must be created with integer length');
     }
@@ -1353,6 +1384,14 @@ export class VirtualMachine {
     const op = op_ as IL.BinOpCode;
     let right = this.pop();
     let left = this.pop();
+    if (op !== 'DIVIDE_AND_TRUNC' && left.type === 'NumberValue' && right.type === 'NumberValue' &&
+      (left.numericType || right.numericType)) {
+      const result = this.performNumericOperation(() =>
+        binaryNumeric(op, this.numberValueData(left), this.numberValueData(right), undefined, this.opts.defaultFloatWidth ?? 64));
+      if (typeof result === 'boolean') this.pushBoolean(result);
+      else this.pushNumeric(result);
+      return;
+    }
     switch (op) {
       case '+': {
         if (left.type === 'StringValue' || right.type === 'StringValue') {
@@ -1361,14 +1400,20 @@ export class VirtualMachine {
           const rightStr = this.convertToString(right);
           this.pushString(leftStr + rightStr);
         } else {
-          // Arithmetic addition
+          // Arithmetic addition. The native VM keeps exact int32 values on its
+          // integer fast path and only enters floating-point semantics on
+          // overflow or when either operand is already floating point.
           const leftNum = this.convertToNumber(left);
           const rightNum = this.convertToNumber(right);
-          let result = leftNum + rightNum;
-          if (this.opts.overflowChecks === false && isSInt32(leftNum) && isSInt32(rightNum)) {
-            result = result | 0;
+          const bothInt32 = this.isExactInt32(leftNum) && this.isExactInt32(rightNum);
+          const result = leftNum + rightNum;
+          if (this.opts.overflowChecks === false && bothInt32) {
+            this.pushNumber(result | 0);
+          } else if (bothInt32 && isSInt32(result)) {
+            this.pushNumber(result);
+          } else {
+            this.pushFloat(result);
           }
-          this.pushNumber(result);
         }
         break;
       }
@@ -1387,27 +1432,50 @@ export class VirtualMachine {
       {
         const leftNum = this.convertToNumber(left);
         const rightNum = this.convertToNumber(right);
-        let result: number;
+        const bothInt32 = this.isExactInt32(leftNum) && this.isExactInt32(rightNum);
+
         switch (op) {
-          case '-': result = leftNum - rightNum; break;
-          case '/': result = leftNum / rightNum; break;
-          case 'DIVIDE_AND_TRUNC': result = leftNum / rightNum | 0; break;
-          case '%': result = leftNum % rightNum; break;
-          case '*': result = leftNum * rightNum; break;
-          case '**': result = leftNum ** rightNum; break;
-          case '&': result = leftNum & rightNum; break;
-          case '|': result = leftNum | rightNum; break;
-          case '>>': result = leftNum >> rightNum; break;
-          case '>>>': result = leftNum >>> rightNum; break;
-          case '<<': result = leftNum << rightNum; break;
-          case '^': result = leftNum ^ rightNum; break;
+          case '-': {
+            const result = leftNum - rightNum;
+            if (this.opts.overflowChecks === false && bothInt32) this.pushNumber(result | 0);
+            else if (bothInt32 && isSInt32(result)) this.pushNumber(result);
+            else this.pushFloat(result);
+            break;
+          }
+          case '*': {
+            const result = leftNum * rightNum;
+            if (this.opts.overflowChecks === false && bothInt32) this.pushNumber(result | 0);
+            else if (bothInt32 && isSInt32(result)) this.pushNumber(result);
+            else this.pushFloat(result);
+            break;
+          }
+          case '/':
+            this.pushFloat(leftNum / rightNum);
+            break;
+          case 'DIVIDE_AND_TRUNC':
+            if (bothInt32) this.pushNumber(rightNum === 0 ? 0 : ((leftNum / rightNum) | 0));
+            else this.pushNumber(this.roundFloat(leftNum / rightNum) | 0);
+            break;
+          case '%':
+            if (bothInt32 && rightNum !== 0) this.pushNumber(leftNum % rightNum);
+            else this.pushFloat(leftNum % rightNum);
+            break;
+          case '**':
+            this.pushFloat(leftNum ** rightNum);
+            break;
+          case '&': this.pushNumber(leftNum & rightNum); break;
+          case '|': this.pushNumber(leftNum | rightNum); break;
+          case '>>': this.pushNumber(leftNum >> rightNum); break;
+          case '>>>': {
+            const result = leftNum >>> rightNum;
+            if (isSInt32(result)) this.pushNumber(result);
+            else this.pushFloat(result);
+            break;
+          }
+          case '<<': this.pushNumber(leftNum << rightNum); break;
+          case '^': this.pushNumber(leftNum ^ rightNum); break;
           default: return assertUnreachable(op);
         }
-        // Overflow checking changes the semantics of the language
-        if (this.opts.overflowChecks === false && op !== '/' && op !== '%' && isSInt32(leftNum) && isSInt32(rightNum)) {
-          result = result | 0;
-        }
-        this.pushNumber(result);
         break;
       }
       case '>':
@@ -1415,15 +1483,19 @@ export class VirtualMachine {
       case '>=':
       case '<=':
       {
-        const leftNum = this.convertToNumber(left);
-        const rightNum = this.convertToNumber(right);
         let result: boolean;
-        switch (op) {
-          case '>': result = leftNum > rightNum; break;
-          case '<': result = leftNum < rightNum; break;
-          case '>=': result = leftNum >= rightNum; break;
-          case '<=': result = leftNum <= rightNum; break;
-          default: return assertUnreachable(op);
+        if (left.type === 'NumberValue' && right.type === 'NumberValue') {
+          result = compareNumeric(op, this.numberValueData(left), this.numberValueData(right));
+        } else {
+          const leftNum = this.convertToNumber(left);
+          const rightNum = this.convertToNumber(right);
+          switch (op) {
+            case '>': result = leftNum > rightNum; break;
+            case '<': result = leftNum < rightNum; break;
+            case '>=': result = leftNum >= rightNum; break;
+            case '<=': result = leftNum <= rightNum; break;
+            default: return assertUnreachable(op);
+          }
         }
         this.pushBoolean(result);
         break;
@@ -1479,6 +1551,7 @@ export class VirtualMachine {
         ) {
           const internalSlotCount = prototypeAllocation.internalSlots[VM.VM_OIS_PROTO_SLOT_COUNT];
           hardAssert(internalSlotCount.type === 'NumberValue');
+          hardAssert(typeof internalSlotCount.value === 'number');
           const count = internalSlotCount.value;
           for (const slot of prototypeAllocation.internalSlots.slice(4, 4 + count)) {
             internalSlots.push(slot);
@@ -1535,7 +1608,172 @@ export class VirtualMachine {
   }
 
   private operationLiteral(value: IL.Value) {
-    this.push(value);
+    if (value.type === 'NumberValue') {
+      if (value.numericType) {
+        this.push(value);
+      } else if (typeof value.value === 'number') {
+        // The source compiler applies its file-level default to ordinary
+        // literals. Reapplying the VM-wide default here would corrupt a file
+        // that overrides that default.
+        this.push(value);
+      } else {
+        this.ilError('Ordinary NumberValue literal cannot contain a bigint payload');
+      }
+    } else {
+      this.push(value);
+    }
+  }
+
+  private numberValueData(value: IL.Value): NumericValueData {
+    if (value.type !== 'NumberValue') {
+      return this.runtimeError(`Typed numeric operation requires a Number, received ${this.getType(value)}`);
+    }
+    return {
+      flavor: value.numericType ?? { kind: 'ordinary' },
+      value: value.value,
+    };
+  }
+
+  private pushNumeric(value: NumericValueData, applyOrdinaryDefault = true): void {
+    if (value.flavor.kind === 'ordinary') {
+      if (typeof value.value !== 'number') return this.ilError('Ordinary numeric result must use a Number payload');
+      this.push(applyOrdinaryDefault ? this.numberValue(value.value) : { type: 'NumberValue', value: value.value });
+    } else if (value.flavor.kind === 'integer') {
+      if (typeof value.value !== 'bigint') return this.ilError('Typed integer result must use a bigint payload');
+      this.push(IL.typedIntegerValue(value.flavor.signed, value.flavor.width, value.value));
+    } else {
+      if (typeof value.value !== 'number') return this.ilError('Typed float result must use a Number payload');
+      this.push(IL.typedFloatValue(value.flavor.width, value.value));
+    }
+  }
+
+  private performNumericOperation<T>(operation: () => T): T {
+    try {
+      return operation();
+    } catch (error) {
+      if (error instanceof NumericError) {
+        return this.runtimeError(`Numeric error (${error.code}): ${error.message}`);
+      }
+      throw error;
+    }
+  }
+
+  private operationNumericBinOp(op: string, typeOperand: IL.NumericTypeOperand) {
+    this.operationNumericBinary(op as IL.BinOpCode, typeOperand.numericType, false, typeOperand.contextMode);
+  }
+
+  private operationNumericBinOpTyped(op: string, typeOperand: IL.NumericTypeOperand) {
+    this.operationNumericBinary(op as IL.BinOpCode, typeOperand.numericType, true);
+  }
+
+  private operationNumericBinary(
+    op: IL.BinOpCode,
+    type: IL.NumericType,
+    typed: boolean,
+    contextMode?: IL.NumericTypeOperand['contextMode'],
+  ) {
+    const rightValue = this.pop();
+    const leftValue = this.pop();
+    if (contextMode === 'default' && (rightValue.type !== 'NumberValue' || leftValue.type !== 'NumberValue')) {
+      if (type.kind !== 'float') return this.ilError('Default numeric context must use a floating type');
+      return this.operationWithDefaultFloatWidth(type.width, () => {
+        this.push(leftValue);
+        this.push(rightValue);
+        this.operationBinOp(op);
+        this.roundTopOrdinaryNumber(type.width);
+      });
+    }
+    const right = this.numberValueData(rightValue);
+    const left = this.numberValueData(leftValue);
+    const result = this.performNumericOperation(() =>
+      binaryNumeric(op, left, right, type, this.opts.defaultFloatWidth ?? 64));
+    if (typeof result === 'boolean') {
+      this.pushBoolean(result);
+    } else {
+      const numericResult = this.performNumericOperation(() =>
+        typed ? convertNumeric(result, type, this.opts.defaultFloatWidth ?? 64) : result);
+      // The semantic helper has already rounded ordinary results to the
+      // operation's context. Do not round them again using the VM default.
+      this.pushNumeric(numericResult, false);
+    }
+  }
+
+  private operationNumericUnOp(op: string, typeOperand: IL.NumericTypeOperand) {
+    this.operationNumericUnary(op as IL.UnOpCode, typeOperand.numericType, false, typeOperand.contextMode);
+  }
+
+  private operationNumericUnOpTyped(op: string, typeOperand: IL.NumericTypeOperand) {
+    this.operationNumericUnary(op as IL.UnOpCode, typeOperand.numericType, true);
+  }
+
+  private operationNumericUnary(
+    op: IL.UnOpCode,
+    type: IL.NumericType,
+    typed: boolean,
+    contextMode?: IL.NumericTypeOperand['contextMode'],
+  ) {
+    const operand = this.pop();
+    if ((op === '++' || op === '--') && operand.type !== 'NumberValue') {
+      const value: NumericValueData = { flavor: { kind: 'ordinary' }, value: this.convertToNumber(operand) };
+      const result = this.performNumericOperation(() =>
+        unaryNumeric(op, value, type, this.opts.defaultFloatWidth ?? 64));
+      this.pushNumeric(result, false);
+      return;
+    }
+    if (contextMode === 'default' && operand.type !== 'NumberValue') {
+      if (type.kind !== 'float') return this.ilError('Default numeric context must use a floating type');
+      return this.operationWithDefaultFloatWidth(type.width, () => {
+        this.push(operand);
+        this.operationUnOp(op);
+        this.roundTopOrdinaryNumber(type.width);
+      });
+    }
+    const value = this.numberValueData(operand);
+    const result = this.performNumericOperation(() =>
+      unaryNumeric(op, value, type, this.opts.defaultFloatWidth ?? 64));
+    const numericResult = this.performNumericOperation(() =>
+      typed ? convertNumeric(result, type, this.opts.defaultFloatWidth ?? 64) : result);
+    this.pushNumeric(numericResult, false);
+  }
+
+  private operationNumericCast(typeOperand: IL.NumericTypeOperand) {
+    const value = this.numberValueData(this.pop());
+    const result = this.performNumericOperation(() => convertNumeric(value, typeOperand.numericType, this.opts.defaultFloatWidth ?? 64));
+    this.pushNumeric(result);
+  }
+
+  private operationWithDefaultFloatWidth(width: 32 | 64, operation: () => void): void {
+    const previousWidth = this.opts.defaultFloatWidth ?? 64;
+    this.opts.defaultFloatWidth = width;
+    try {
+      operation();
+    } finally {
+      this.opts.defaultFloatWidth = previousWidth;
+    }
+  }
+
+  private roundTopOrdinaryNumber(width: 32 | 64): void {
+    const value = this.pop();
+    if (value.type === 'NumberValue' && !value.numericType && typeof value.value === 'number') {
+      this.pushNumber(width === 32 ? Math.fround(value.value) : value.value);
+    } else {
+      this.push(value);
+    }
+  }
+
+  private operationNumericKindOf() {
+    const value = this.pop();
+    if (value.type !== 'NumberValue') return this.pushUndefined();
+    this.pushString(value.numericType ? numericTypeName(value.numericType) : 'number');
+  }
+
+  private operationNumericIsInteger() {
+    const value = this.pop();
+    if (value.type !== 'NumberValue') return this.pushBoolean(false);
+    if (value.numericType?.kind === 'integer' || typeof value.value === 'bigint') {
+      return this.pushBoolean(true);
+    }
+    this.pushBoolean(typeof value.value === 'number' && Number.isInteger(value.value));
   }
 
   private operationLoadArg(index: number) {
@@ -1824,6 +2062,7 @@ export class VirtualMachine {
     const previousCatchDelta = this.pop();
     hardAssert(programAddress.type === 'ResumePoint' || programAddress.type === 'FunctionValue');
     hardAssert(previousCatchDelta.type === 'NumberValue');
+    hardAssert(typeof previousCatchDelta.value === 'number');
     hardAssert(previousCatchDelta.value <= 0); // Delta relative to stack pointer so always negative
 
     const address = programAddress.type === 'FunctionValue'
@@ -2029,21 +2268,31 @@ export class VirtualMachine {
   private operationUnOp(op_: string) {
     const op = op_ as IL.UnOpCode;
     let operand = this.pop();
+    if (operand.type === 'NumberValue' && operand.numericType &&
+      (op === '+' || op === '-' || op === '~')) {
+      const result = this.performNumericOperation(() =>
+        unaryNumeric(op, this.numberValueData(operand), undefined, this.opts.defaultFloatWidth ?? 64));
+      this.pushNumeric(result);
+      return;
+    }
     switch (op) {
       case '!': this.pushBoolean(!this.isTruthy(operand)); break;
       case '+': this.pushNumber(this.convertToNumber(operand)); break;
       case '-': {
         const n = this.convertToNumber(operand);
-        let result = -n;
-        if (this.opts.overflowChecks === false && isSInt32(n))
-          result = n | 0;
-        this.pushNumber(result);
+        if (this.opts.overflowChecks === false && this.isExactInt32(n)) {
+          this.pushNumber((-n) | 0);
+        } else if (this.isExactInt32(n) && n !== 0 && n !== -0x80000000) {
+          this.pushNumber(-n);
+        } else {
+          this.pushFloat(-n);
+        }
         break;
       }
       case '~': this.pushNumber(~this.convertToNumber(operand)); break;
       case 'typeof': this.pushString(this.typeOf(operand)); break;
       case 'typeCodeOf': this.pushNumber(this.typeCodeOf(operand)); break;
-      default: return assertUnreachable(op);
+      default: return assertUnreachable(op as never);
     }
   }
 
@@ -2198,11 +2447,23 @@ export class VirtualMachine {
     this.push(IL.undefinedValue)
   }
 
+  private roundFloat(value: number): number {
+    return this.opts.defaultFloatWidth === 32 ? Math.fround(value) : value;
+  }
+
+  private isExactInt32(value: number): boolean {
+    return isSInt32(value) && !Object.is(value, -0);
+  }
+
   private pushNumber(value: number) {
     this.push({
       type: 'NumberValue',
       value
     })
+  }
+
+  private pushFloat(value: number) {
+    this.pushNumber(this.roundFloat(value));
   }
 
   private pushBoolean(value: boolean) {
@@ -2258,7 +2519,7 @@ export class VirtualMachine {
       case 'ClassValue': return NaN;
       case 'NullValue': return 0;
       case 'UndefinedValue': return NaN;
-      case 'NumberValue': return value.value;
+      case 'NumberValue': return typeof value.value === 'bigint' ? Number(value.value) : value.value;
       case 'StringValue': return +value.value;
       // Deleted values should be converted to "undefined" (or a TDZ error) upon reading them
       case 'DeletedValue': return unexpected();
@@ -2269,6 +2530,9 @@ export class VirtualMachine {
   }
 
   public areValuesEqual(value1: IL.Value, value2: IL.Value): boolean {
+    if (value1.type === 'NumberValue' && value2.type === 'NumberValue') {
+      return compareNumeric('===', this.numberValueData(value1), this.numberValueData(value2));
+    }
     if (value1.type !== value2.type) return false;
 
     if (value1.type === 'ClassValue') {
@@ -2528,9 +2792,10 @@ export class VirtualMachine {
       case 'UndefinedValue':
       case 'NullValue':
       case 'BooleanValue':
-      case 'NumberValue':
       case 'StringValue':
         return value.value;
+      case 'NumberValue':
+        return typeof value.value === 'bigint' ? Number(value.value) : value.value;
       case 'FunctionValue':
       case 'HostFunctionValue':
       case 'EphemeralFunctionValue':
@@ -2589,7 +2854,7 @@ export class VirtualMachine {
     typeof value === 'number' || unexpected();
     return {
       type: 'NumberValue',
-      value
+      value: this.isExactInt32(value) ? value : this.roundFloat(value)
     }
   }
 
@@ -2841,7 +3106,7 @@ export class VirtualMachine {
   private toPropertyName(propertyNameValue: IL.Value): VM.PropertyKey | VM.Index {
     // TODO: This condition is too weak. A value like `3.1` can't be used as a property name
     if (propertyNameValue.type === 'StringValue' || propertyNameValue.type === 'NumberValue') {
-      return propertyNameValue.value;
+      return typeof propertyNameValue.value === 'bigint' ? Number(propertyNameValue.value) : propertyNameValue.value;
     } else {
       // Property indexes in Microvium are limited to numbers or strings. We
       // don't automatically coerce to a string.
@@ -2883,11 +3148,14 @@ export class VirtualMachine {
         return this.runtimeError(`Uint8Array index out of bounds (${propertyName})`)
       }
 
-      if (value.type !== 'NumberValue' || (value.value & 0xFF) !== value.value) {
+      if (value.type !== 'NumberValue' ||
+        (typeof value.value === 'bigint'
+          ? value.value < 0n || value.value > 0xFFn
+          : (value.value & 0xFF) !== value.value)) {
         return this.runtimeError(`Cannot assign non-byte to element of Uint8Array`)
       }
 
-      object.bytes[propertyName] = value.value;
+      object.bytes[propertyName] = Number(value.value);
       return;
     }
 
@@ -2902,7 +3170,7 @@ export class VirtualMachine {
         if (object.lengthIsFixed) {
           return this.runtimeError(`Cannot set length of fixed-length array: ${stringifyValue(value)}`);
         }
-        const newLength = value.value;
+        const newLength = Number(value.value);
         this.checkIndexValue(newLength);
         array.length = newLength;
       } else if (typeof propertyName === 'number') {
@@ -3014,6 +3282,25 @@ export class VirtualMachine {
         }
       }
     }));
+
+    const numericBuiltin = (name: string, opcode: 'NumericKindOf' | 'NumericIsInteger') =>
+      this.importCustomILFunction(`Microvium.${name}`, {
+        entryBlockID: 'entry',
+        blocks: {
+          'entry': {
+            id: 'entry',
+            expectedStackDepthAtEntry: 0,
+            operations: [
+              { opcode: 'LoadArg', operands: [indexOperand(1)], stackDepthBefore: 0, stackDepthAfter: 1 },
+              { opcode, operands: [], stackDepthBefore: 1, stackDepthAfter: 1 },
+              { opcode: 'Return', operands: [], stackDepthBefore: 1, stackDepthAfter: 0 },
+            ],
+          },
+        },
+      });
+
+    this.setProperty(obj_Microvium, this.stringValue('numericKindOf'), numericBuiltin('numericKindOf', 'NumericKindOf'));
+    this.setProperty(obj_Microvium, this.stringValue('numericIsInteger'), numericBuiltin('numericIsInteger', 'NumericIsInteger'));
 
     // The no-op-function is exposed through Microvium.noOpFunction just so we
     // can have test cases for it.

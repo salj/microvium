@@ -43,7 +43,7 @@ export const tableRow = <T>(formatValue: (v: T) => string): HTMLFormat<Labelled<
               .join('<wbr>')}
         </td>
         <td class="label">
-          ${value.label ? value.label + ': ' : ''}
+          ${value.label ? escapeHTML(value.label) + ':' : ''}
         </td>
         ${value.value !== undefined
           ? `<td class="value">${formatValue(value.value)}</td>`

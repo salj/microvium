@@ -230,8 +230,7 @@ function makeIncrementorA() {
 function anonymous() {
   entry:
     LoadScoped(index 1);                 // 1  x              ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:41:16
-    Literal(lit 1);                      // 2                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:41:16
-    BinOp(op '+');                       // 1                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:41:16
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 1  ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:41:16
     LoadVar(index 0);                    // 2                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:41:16
     StoreScoped(index 1);                // 1  x              ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:41:16
     Return();                            // 0                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:41:16
@@ -253,8 +252,7 @@ function makeIncrementorA2() {
 function anonymous1() {
   entry:
     LoadScoped(index 1);                 // 1  x              ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:47:30
-    Literal(lit 1);                      // 2                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:47:30
-    BinOp(op '+');                       // 1                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:47:30
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 1  ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:47:30
     LoadVar(index 0);                    // 2                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:47:30
     StoreScoped(index 1);                // 1  x              ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:47:30
     Return();                            // 0                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:47:23
@@ -276,8 +274,7 @@ function makeIncrementorB() {
 function increment() {
   entry:
     LoadScoped(index 1);                 // 1  x              ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:55:12
-    Literal(lit 1);                      // 2                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:55:12
-    BinOp(op '+');                       // 1                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:55:12
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 1  ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:55:12
     LoadVar(index 0);                    // 2                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:55:12
     StoreScoped(index 1);                // 1  x              ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:55:12
     Return();                            // 0                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:55:5
@@ -311,8 +308,7 @@ function anonymous2() {
 function anonymous3() {
   entry:
     LoadScoped(index 3);                 // 1  x              ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:64:22
-    Literal(lit 1);                      // 2                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:64:22
-    BinOp(op '+');                       // 1                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:64:22
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 1  ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:64:22
     LoadVar(index 0);                    // 2                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:64:22
     StoreScoped(index 3);                // 1  x              ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:64:22
     Return();                            // 0                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:64:22
@@ -403,8 +399,7 @@ function anonymous4() {
   entry:
     LoadScoped(index 2);                 // 1  x              ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:74:16
     LoadVar(index 0);                    // 2                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:74:16
-    Literal(lit 1);                      // 3                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:74:16
-    BinOp(op '+');                       // 2                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:74:16
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 2  ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:74:16
     LoadVar(index 1);                    // 3                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:74:16
     StoreScoped(index 2);                // 2  x              ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:74:16
     Pop(count 1);                        // 1                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:74:16
@@ -415,8 +410,7 @@ function anonymous5() {
   entry:
     LoadScoped(index 5);                 // 1  x              ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:78:16
     LoadVar(index 0);                    // 2                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:78:16
-    Literal(lit 1);                      // 3                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:78:16
-    BinOp(op '+');                       // 2                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:78:16
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 2  ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:78:16
     LoadVar(index 1);                    // 3                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:78:16
     StoreScoped(index 5);                // 2  x              ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:78:16
     Pop(count 1);                        // 1                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:78:16
@@ -427,8 +421,7 @@ function anonymous6() {
   entry:
     LoadScoped(index 3);                 // 1  x              ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:80:14
     LoadVar(index 0);                    // 2                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:80:14
-    Literal(lit 1);                      // 3                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:80:14
-    BinOp(op '+');                       // 2                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:80:14
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 2  ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:80:14
     LoadVar(index 1);                    // 3                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:80:14
     StoreScoped(index 3);                // 2  x              ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:80:14
     Pop(count 1);                        // 1                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:80:14
@@ -613,8 +606,7 @@ function anonymous9() {
     BinOp(op '+');                       // 2                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:122:22
     LoadScoped(index 12);                // 3  x3             ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:123:17
     LoadVar(index 2);                    // 4                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:123:17
-    Literal(lit 1);                      // 5                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:123:17
-    BinOp(op '+');                       // 4                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:123:17
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 4  ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:123:17
     LoadVar(index 3);                    // 5                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:123:17
     StoreScoped(index 12);               // 4  x3             ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:123:17
     Pop(count 1);                        // 3                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:123:17
@@ -627,8 +619,7 @@ function anonymous9() {
     BinOp(op '+');                       // 2                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:124:22
     LoadScoped(index 13);                // 3  x5             ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:125:17
     LoadVar(index 2);                    // 4                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:125:17
-    Literal(lit 1);                      // 5                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:125:17
-    BinOp(op '+');                       // 4                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:125:17
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 4  ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:125:17
     LoadVar(index 3);                    // 5                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:125:17
     StoreScoped(index 13);               // 4  x5             ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:125:17
     Pop(count 1);                        // 3                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:125:17
@@ -637,8 +628,7 @@ function anonymous9() {
     BinOp(op '+');                       // 2                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:125:24
     LoadScoped(index 16);                // 3  x6             ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:126:17
     LoadVar(index 2);                    // 4                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:126:17
-    Literal(lit 1);                      // 5                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:126:17
-    BinOp(op '+');                       // 4                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:126:17
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 4  ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:126:17
     LoadVar(index 3);                    // 5                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:126:17
     StoreScoped(index 16);               // 4  x6             ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:126:17
     Pop(count 1);                        // 3                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:126:17
@@ -651,8 +641,7 @@ function anonymous9() {
     BinOp(op '+');                       // 2                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:127:22
     LoadScoped(index 14);                // 3  x8             ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:128:17
     LoadVar(index 2);                    // 4                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:128:17
-    Literal(lit 1);                      // 5                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:128:17
-    BinOp(op '+');                       // 4                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:128:17
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 4  ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:128:17
     LoadVar(index 3);                    // 5                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:128:17
     StoreScoped(index 14);               // 4  x8             ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:128:17
     Pop(count 1);                        // 3                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:128:17
@@ -661,8 +650,7 @@ function anonymous9() {
     BinOp(op '+');                       // 2                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:128:24
     LoadScoped(index 18);                // 3  x9             ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:129:17
     LoadVar(index 2);                    // 4                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:129:17
-    Literal(lit 1);                      // 5                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:129:17
-    BinOp(op '+');                       // 4                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:129:17
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 4  ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:129:17
     LoadVar(index 3);                    // 5                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:129:17
     StoreScoped(index 18);               // 4  x9             ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:129:17
     Pop(count 1);                        // 3                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:129:17
@@ -675,8 +663,7 @@ function anonymous9() {
     BinOp(op '+');                       // 2                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:130:23
     LoadScoped(index 2);                 // 3  x12            ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:131:17
     LoadVar(index 2);                    // 4                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:131:17
-    Literal(lit 1);                      // 5                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:131:17
-    BinOp(op '+');                       // 4                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:131:17
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 4  ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:131:17
     LoadVar(index 3);                    // 5                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:131:17
     StoreScoped(index 2);                // 4  x12            ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:131:17
     Pop(count 1);                        // 3                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:131:17
@@ -689,8 +676,7 @@ function anonymous9() {
     BinOp(op '+');                       // 2                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:132:23
     LoadScoped(index 3);                 // 3  x14            ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:133:17
     LoadVar(index 2);                    // 4                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:133:17
-    Literal(lit 1);                      // 5                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:133:17
-    BinOp(op '+');                       // 4                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:133:17
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 4  ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:133:17
     LoadVar(index 3);                    // 5                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:133:17
     StoreScoped(index 3);                // 4  x14            ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:133:17
     Pop(count 1);                        // 3                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:133:17
@@ -699,8 +685,7 @@ function anonymous9() {
     BinOp(op '+');                       // 2                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:133:25
     LoadScoped(index 6);                 // 3  x15            ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:134:17
     LoadVar(index 2);                    // 4                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:134:17
-    Literal(lit 1);                      // 5                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:134:17
-    BinOp(op '+');                       // 4                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:134:17
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 4  ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:134:17
     LoadVar(index 3);                    // 5                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:134:17
     StoreScoped(index 6);                // 4  x15            ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:134:17
     Pop(count 1);                        // 3                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:134:17
@@ -713,8 +698,7 @@ function anonymous9() {
     BinOp(op '+');                       // 2                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:135:23
     LoadScoped(index 4);                 // 3  x17            ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:136:17
     LoadVar(index 2);                    // 4                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:136:17
-    Literal(lit 1);                      // 5                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:136:17
-    BinOp(op '+');                       // 4                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:136:17
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 4  ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:136:17
     LoadVar(index 3);                    // 5                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:136:17
     StoreScoped(index 4);                // 4  x17            ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:136:17
     Pop(count 1);                        // 3                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:136:17
@@ -723,8 +707,7 @@ function anonymous9() {
     BinOp(op '+');                       // 2                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:136:25
     LoadScoped(index 8);                 // 3  x18            ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:137:17
     LoadVar(index 2);                    // 4                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:137:17
-    Literal(lit 1);                      // 5                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:137:17
-    BinOp(op '+');                       // 4                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:137:17
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 4  ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:137:17
     LoadVar(index 3);                    // 5                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:137:17
     StoreScoped(index 8);                // 4  x18            ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:137:17
     Pop(count 1);                        // 3                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:137:17
@@ -735,8 +718,7 @@ function anonymous9() {
     BinOp(op '+');                       // 2                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:138:17
     LoadVar(index 0);                    // 3  x21            ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:139:17
     LoadVar(index 2);                    // 4                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:139:17
-    Literal(lit 1);                      // 5                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:139:17
-    BinOp(op '+');                       // 4                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:139:17
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 4  ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:139:17
     LoadVar(index 3);                    // 5                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:139:17
     StoreVar(index 0);                   // 4  x21            ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:139:17
     Pop(count 1);                        // 3                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:139:17
@@ -959,8 +941,7 @@ function anonymous14() {
     Literal(lit 1000);                   // 1                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:213:5
     LoadGlobal(name 'v1');               // 2                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:213:12
     LoadVar(index 1);                    // 3                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:213:12
-    Literal(lit 1);                      // 4                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:213:12
-    BinOp(op '+');                       // 3                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:213:12
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 3  ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:213:12
     LoadVar(index 2);                    // 4                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:213:12
     StoreGlobal(name 'v1');              // 3                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:213:12
     Pop(count 1);                        // 2                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:213:12
@@ -968,8 +949,7 @@ function anonymous14() {
     Literal(lit 100);                    // 2                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:214:5
     LoadGlobal(name 'v2');               // 3                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:214:11
     LoadVar(index 2);                    // 4                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:214:11
-    Literal(lit 1);                      // 5                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:214:11
-    BinOp(op '+');                       // 4                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:214:11
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 4  ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:214:11
     LoadVar(index 3);                    // 5                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:214:11
     StoreGlobal(name 'v2');              // 4                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:214:11
     Pop(count 1);                        // 3                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:214:11
@@ -978,8 +958,7 @@ function anonymous14() {
     Literal(lit 10);                     // 2                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:215:5
     LoadScoped(index 1);                 // 3  v3             ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:215:10
     LoadVar(index 2);                    // 4                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:215:10
-    Literal(lit 1);                      // 5                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:215:10
-    BinOp(op '+');                       // 4                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:215:10
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 4  ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:215:10
     LoadVar(index 3);                    // 5                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:215:10
     StoreScoped(index 1);                // 4  v3             ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:215:10
     Pop(count 1);                        // 3                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:215:10
@@ -988,8 +967,7 @@ function anonymous14() {
     Literal(lit 1);                      // 2                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:216:5
     LoadGlobal(name 'v4');               // 3                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:216:9
     LoadVar(index 2);                    // 4                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:216:9
-    Literal(lit 1);                      // 5                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:216:9
-    BinOp(op '+');                       // 4                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:216:9
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 4  ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:216:9
     LoadVar(index 3);                    // 5                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:216:9
     StoreGlobal(name 'v4');              // 4                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:216:9
     Pop(count 1);                        // 3                 ./test/end-to-end/tests/closures-and-scopes.test.mvm.js:216:9

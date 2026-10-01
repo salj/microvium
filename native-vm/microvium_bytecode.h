@@ -85,6 +85,9 @@ typedef enum mvm_TeBytecodeSection {
    */
   BCS_ROM,
 
+  /** Named import/export descriptors, compressed symbols, and signatures. */
+  BCS_FFI_TABLE,
+
   /**
    * Globals
    *
@@ -141,8 +144,9 @@ typedef enum mvm_TeBuiltins {
   BIN_BUILTIN_COUNT
 } mvm_TeBuiltins;
 
-// Minimal bytecode is 32 bytes (sizeof(mvm_TsBytecodeHeader) + BCS_SECTION_COUNT*2 + BIN_BUILTIN_COUNT*2)
-typedef struct mvm_TsBytecodeHeader { // Size = 12B + sectionOffsets
+// v9 keeps the header at 28 bytes by limiting requiredFeatureFlags to 16 bits.
+#pragma pack(push, 2)
+typedef struct mvm_TsBytecodeHeader { // Size = 10B + sectionOffsets
   uint8_t bytecodeVersion; // MVM_ENGINE_MAJOR_VERSION
   uint8_t headerSize;
   uint8_t requiredEngineVersion; // MVM_ENGINE_MINOR_VERSION
@@ -151,15 +155,18 @@ typedef struct mvm_TsBytecodeHeader { // Size = 12B + sectionOffsets
   uint16_t bytecodeSize; // Including header
   uint16_t crc; // CCITT16 (header and data, of everything after the CRC)
 
-  uint32_t requiredFeatureFlags;
+  uint16_t requiredFeatureFlags;
 
   /*
   Note: the sections are assumed to be in order as per mvm_TeBytecodeSection, so
   that the size of a section can be computed as the difference between the
   adjacent offsets. The last section runs up until the end of the bytecode.
   */
-  uint16_t sectionOffsets[BCS_SECTION_COUNT]; // 8 sections, 16B
+  uint16_t sectionOffsets[BCS_SECTION_COUNT]; // 9 offsets, 18B
 } mvm_TsBytecodeHeader;
+#pragma pack(pop)
+
+typedef char mvm_TsBytecodeHeader_must_be_28_bytes[(sizeof(mvm_TsBytecodeHeader) == 28) ? 1 : -1];
 
 typedef enum mvm_TeFeatureFlags {
   FF_FLOAT_SUPPORT = 0,

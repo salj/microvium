@@ -1,29 +1,30 @@
-Bytecode size: 138 B
+Bytecode size: 146 B
 
 Addr    Size
 ==== =======
 0000   1c  - # Header
-0000       1     bytecodeVersion: 8
+0000       1     bytecodeVersion: 9
 0001       1     headerSize: 28
 0002       1     requiredEngineVersion: 0
-0003       1     reserved: 0
-0004       2     bytecodeSize: 138
-0006       2     expectedCRC: c374
-0008       4     requiredFeatureFlags: 3
-000c       2     BCS_IMPORT_TABLE: 001c
-000e       2     BCS_EXPORT_TABLE: 001e
-0010       2     BCS_SHORT_CALL_TABLE: 0022
-0012       2     BCS_BUILTINS: 0022
-0014       2     BCS_STRING_TABLE: 0030
-0016       2     BCS_ROM: 0038
-0018       2     BCS_GLOBALS: 0078
-001a       2     BCS_HEAP: 007e
+0003       1     numericOptions: 0
+0004       2     bytecodeSize: 146
+0006       2     expectedCRC: d910
+0008       2     requiredFeatureFlags: 3
+000a       2     BCS_IMPORT_TABLE: 001c
+000c       2     BCS_EXPORT_TABLE: 001e
+000e       2     BCS_SHORT_CALL_TABLE: 0022
+0010       2     BCS_BUILTINS: 0022
+0012       2     BCS_STRING_TABLE: 0030
+0014       2     BCS_ROM: 0038
+0016       2     BCS_FFI_TABLE: 0078
+0018       2     BCS_GLOBALS: 0080
+001a       2     BCS_HEAP: 0086
 001c    2  - # Import Table
 001c       2     [0]: 2
 001e    4  - # Export Table
 001e       4     [0]: &0054
 0022    e  - # Builtins
-0022       2     [BIN_INTERNED_STRINGS]: &007c
+0022       2     [BIN_INTERNED_STRINGS]: &0084
 0024       2     [BIN_ARRAY_PROTO]: undefined
 0026       2     [BIN_STR_PROTOTYPE]: undefined
 0028       2     [BIN_ASYNC_CONTINUE]: undefined
@@ -71,8 +72,9 @@ Addr    Size
 0074       2             Call(count 2, flag true)
 0076       1             Literal(lit undefined)
 0077       1             Return()
-0078    6  - # Globals
-0078       2     [0]: &0050
-007a       2     [1]: deleted
-007c       2     Handle: undefined
-007e       c <unused>
+0078       8 <unused>
+0080    6  - # Globals
+0080       2     [0]: &0050
+0082       2     [1]: deleted
+0084       2     Handle: undefined
+0086       c <unused>

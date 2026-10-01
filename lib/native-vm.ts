@@ -18,12 +18,13 @@ export enum CoverageCaseMode {
 
 export type HostFunction = (args: Value[]) => Value;
 export type ResolveImport = (hostFunctionID: vm_HostFunctionID) => HostFunction;
+export type ResolveNamedImport = (moduleName: string, importName: string, argumentCount: number) => HostFunction;
 export type CoverageCallback = (id: number, mode: CoverageCaseMode, indexInTable: number, tableSize: number, line: number) => void;
 
 export const NativeVM = addon.NativeVM as NativeVMClass;
 
 export interface NativeVMClass {
-  new (snapshotBytecode: Buffer, resolveImport: ResolveImport): NativeVM;
+  new (snapshotBytecode: Buffer, resolveImport: ResolveImport, resolveNamedImport?: ResolveNamedImport): NativeVM;
   // Used for code coverage analysis
   setCoverageCallback(callback: CoverageCallback | undefined): void;
   readonly MVM_PORT_INT32_OVERFLOW_CHECKS: boolean;

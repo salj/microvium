@@ -24,6 +24,7 @@ export type Snapshot = { readonly data: Buffer };
 export type HostImportFunction = (hostFunctionID: IL.HostFunctionID) => Function;
 export type HostImportTable = Record<IL.HostFunctionID, Function>;
 export type HostImportMap = HostImportTable | HostImportFunction;
+export type NamedHostImportTable = Record<string, Record<string, (...args: any[]) => any>>;
 
 export type ImportHook = (specifier: ModuleSpecifier) => ModuleObject | undefined;
 
@@ -33,6 +34,10 @@ export interface MicroviumCreateOpts {
   // For debug purposes: output IL generated for each input file
   outputIL?: boolean;
   defaultFloatWidth?: 32 | 64;
+  /** Implementations for named imports, keyed by module specifier then imported name. */
+  namedImports?: NamedHostImportTable;
+  /** Host adapter for optional compiler debug files. */
+  writeDebugFile?: (filename: string, contents: string) => void;
 }
 
 export function create(
@@ -42,8 +47,12 @@ export function create(
   return VirtualMachineFriendly.create(hostImportMap, opts);
 }
 
-export function restore(snapshot: Snapshot, importMap: HostImportMap = defaultHostEnvironment): MicroviumNativeSubset {
-  return new NativeVMFriendly(snapshot, importMap);
+export function restore(
+  snapshot: Snapshot,
+  importMap: HostImportMap = defaultHostEnvironment,
+  opts: Pick<MicroviumCreateOpts, 'namedImports'> = {}
+): MicroviumNativeSubset {
+  return new NativeVMFriendly(snapshot, importMap, opts.namedImports);
 }
 
 export const Snapshot = {
@@ -74,6 +83,7 @@ export interface Microvium extends MicroviumNativeSubset {
   createSnapshot(opts?: SnapshottingOptions): Snapshot;
   vmExport(exportID: ExportID, value: any): void;
   vmImport(importID: ExportID, defaultImplementation?: any): void;
+  resolveNamedExport(exportName: string): any;
   newObject(): any;
   newArray(): any;
   createSnapshotIL(): SnapshotIL;
@@ -84,6 +94,7 @@ export interface Microvium extends MicroviumNativeSubset {
  */
 export interface MicroviumNativeSubset {
   resolveExport(exportID: ExportID): any;
+  resolveNamedExport(exportName: string): any;
   garbageCollect(squeeze?: boolean): void;
   createSnapshot(): Snapshot;
   getMemoryStats(): MemoryStats;
@@ -159,6 +170,8 @@ export interface SnapshottingOptions {
   // the snapshotting will also output an IL file
   outputSnapshotIL?: boolean;
   snapshotILFilename?: string;
+  /** Host adapter for optional snapshot debug output. */
+  writeDebugFile?: (filename: string, contents: string) => void;
   generateSourceMap?: boolean;
 }
 

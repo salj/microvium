@@ -11,6 +11,20 @@ function ['Microvium.newUint8Array']() {
     Return();
 }
 
+function ['Microvium.numericIsInteger']() {
+  entry:
+    LoadArg(index 1);
+    NumericIsInteger();
+    Return();
+}
+
+function ['Microvium.numericKindOf']() {
+  entry:
+    LoadArg(index 1);
+    NumericKindOf();
+    Return();
+}
+
 function run() {
   entry:
     Literal(lit deleted);
@@ -89,8 +103,7 @@ function run() {
     Pop(count 1);
     LoadVar(index 1);
     LoadVar(index 2);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 3);
     StoreVar(index 1);
     Pop(count 1);
@@ -152,5 +165,7 @@ allocation 4 = {
   isMicrovium: true,
   newUint8Array: &function ['Microvium.newUint8Array'],
   noOpFunction: no-op-function,
+  numericIsInteger: &function ['Microvium.numericIsInteger'],
+  numericKindOf: &function ['Microvium.numericKindOf'],
   typeCodeOf: &function typeCodeOf,
 };

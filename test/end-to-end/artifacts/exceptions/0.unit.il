@@ -527,8 +527,7 @@ function test_conditionalThrow() {
     Pop(count 1);                        // 2                 ./test/end-to-end/tests/exceptions.test.mvm.js:172:10
     LoadVar(index 1);                    // 3  i              ./test/end-to-end/tests/exceptions.test.mvm.js:149:26
     LoadVar(index 2);                    // 4                 ./test/end-to-end/tests/exceptions.test.mvm.js:149:26
-    Literal(lit 1);                      // 5                 ./test/end-to-end/tests/exceptions.test.mvm.js:149:26
-    BinOp(op '+');                       // 4                 ./test/end-to-end/tests/exceptions.test.mvm.js:149:26
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 4  ./test/end-to-end/tests/exceptions.test.mvm.js:149:26
     LoadVar(index 3);                    // 5                 ./test/end-to-end/tests/exceptions.test.mvm.js:149:26
     StoreVar(index 1);                   // 4  i              ./test/end-to-end/tests/exceptions.test.mvm.js:149:26
     Pop(count 1);                        // 3                 ./test/end-to-end/tests/exceptions.test.mvm.js:149:26
@@ -750,8 +749,7 @@ function test_breakOutOfTry() {
     Pop(count 1);                        // 2                 ./test/end-to-end/tests/exceptions.test.mvm.js:241:13
     LoadVar(index 1);                    // 3  i              ./test/end-to-end/tests/exceptions.test.mvm.js:225:28
     LoadVar(index 2);                    // 4                 ./test/end-to-end/tests/exceptions.test.mvm.js:225:28
-    Literal(lit 1);                      // 5                 ./test/end-to-end/tests/exceptions.test.mvm.js:225:28
-    BinOp(op '+');                       // 4                 ./test/end-to-end/tests/exceptions.test.mvm.js:225:28
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 4  ./test/end-to-end/tests/exceptions.test.mvm.js:225:28
     LoadVar(index 3);                    // 5                 ./test/end-to-end/tests/exceptions.test.mvm.js:225:28
     StoreVar(index 1);                   // 4  i              ./test/end-to-end/tests/exceptions.test.mvm.js:225:28
     Pop(count 1);                        // 3                 ./test/end-to-end/tests/exceptions.test.mvm.js:225:28
@@ -845,8 +843,7 @@ function test_breakOutOfTryWithClosure() {
     ScopeClone();                        // 1                 ./test/end-to-end/tests/exceptions.test.mvm.js:267:4
     LoadScoped(index 0);                 // 2  i              ./test/end-to-end/tests/exceptions.test.mvm.js:248:28
     LoadVar(index 1);                    // 3                 ./test/end-to-end/tests/exceptions.test.mvm.js:248:28
-    Literal(lit 1);                      // 4                 ./test/end-to-end/tests/exceptions.test.mvm.js:248:28
-    BinOp(op '+');                       // 3                 ./test/end-to-end/tests/exceptions.test.mvm.js:248:28
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 3  ./test/end-to-end/tests/exceptions.test.mvm.js:248:28
     LoadVar(index 2);                    // 4                 ./test/end-to-end/tests/exceptions.test.mvm.js:248:28
     StoreScoped(index 0);                // 3  i              ./test/end-to-end/tests/exceptions.test.mvm.js:248:28
     Pop(count 1);                        // 2                 ./test/end-to-end/tests/exceptions.test.mvm.js:248:28
@@ -1006,8 +1003,7 @@ function test_breakOutOfCatch() {
     Pop(count 1);                        // 8                 ./test/end-to-end/tests/exceptions.test.mvm.js:317:4
     LoadVar(index 7);                    // 9  i              ./test/end-to-end/tests/exceptions.test.mvm.js:274:28
     LoadVar(index 8);                    // 10                ./test/end-to-end/tests/exceptions.test.mvm.js:274:28
-    Literal(lit 1);                      // 11                ./test/end-to-end/tests/exceptions.test.mvm.js:274:28
-    BinOp(op '+');                       // 10                ./test/end-to-end/tests/exceptions.test.mvm.js:274:28
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 10  ./test/end-to-end/tests/exceptions.test.mvm.js:274:28
     LoadVar(index 9);                    // 11                ./test/end-to-end/tests/exceptions.test.mvm.js:274:28
     StoreVar(index 7);                   // 10 i              ./test/end-to-end/tests/exceptions.test.mvm.js:274:28
     Pop(count 1);                        // 9                 ./test/end-to-end/tests/exceptions.test.mvm.js:274:28
@@ -1110,8 +1106,7 @@ function test_breakOutOfDoubleCatch() {
     Pop(count 1);                        // 2                 ./test/end-to-end/tests/exceptions.test.mvm.js:342:13
     LoadVar(index 1);                    // 3  i              ./test/end-to-end/tests/exceptions.test.mvm.js:324:28
     LoadVar(index 2);                    // 4                 ./test/end-to-end/tests/exceptions.test.mvm.js:324:28
-    Literal(lit 1);                      // 5                 ./test/end-to-end/tests/exceptions.test.mvm.js:324:28
-    BinOp(op '+');                       // 4                 ./test/end-to-end/tests/exceptions.test.mvm.js:324:28
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 4  ./test/end-to-end/tests/exceptions.test.mvm.js:324:28
     LoadVar(index 3);                    // 5                 ./test/end-to-end/tests/exceptions.test.mvm.js:324:28
     StoreVar(index 1);                   // 4  i              ./test/end-to-end/tests/exceptions.test.mvm.js:324:28
     Pop(count 1);                        // 3                 ./test/end-to-end/tests/exceptions.test.mvm.js:324:28

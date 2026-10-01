@@ -209,8 +209,7 @@ function GlobalClass_myMethod() {
     LoadArg(index 0);                    // 1  this           ./test/end-to-end/tests/classes.test.mvm.js:38:25
     Literal(lit 'x');                    // 2                 ./test/end-to-end/tests/classes.test.mvm.js:38:25
     ObjectGet();                         // 1                 ./test/end-to-end/tests/classes.test.mvm.js:38:25
-    Literal(lit 1);                      // 2                 ./test/end-to-end/tests/classes.test.mvm.js:38:25
-    BinOp(op '+');                       // 1                 ./test/end-to-end/tests/classes.test.mvm.js:38:25
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 1  ./test/end-to-end/tests/classes.test.mvm.js:38:25
     LoadArg(index 0);                    // 2  this           ./test/end-to-end/tests/classes.test.mvm.js:38:25
     Literal(lit 'x');                    // 3                 ./test/end-to-end/tests/classes.test.mvm.js:38:25
     LoadVar(index 0);                    // 4                 ./test/end-to-end/tests/classes.test.mvm.js:38:25
@@ -483,8 +482,7 @@ function LocalClass_myMethod() {
     LoadArg(index 0);                    // 1  this           ./test/end-to-end/tests/classes.test.mvm.js:69:27
     Literal(lit 'x');                    // 2                 ./test/end-to-end/tests/classes.test.mvm.js:69:27
     ObjectGet();                         // 1                 ./test/end-to-end/tests/classes.test.mvm.js:69:27
-    Literal(lit 1);                      // 2                 ./test/end-to-end/tests/classes.test.mvm.js:69:27
-    BinOp(op '+');                       // 1                 ./test/end-to-end/tests/classes.test.mvm.js:69:27
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 1  ./test/end-to-end/tests/classes.test.mvm.js:69:27
     LoadArg(index 0);                    // 2  this           ./test/end-to-end/tests/classes.test.mvm.js:69:27
     Literal(lit 'x');                    // 3                 ./test/end-to-end/tests/classes.test.mvm.js:69:27
     LoadVar(index 0);                    // 4                 ./test/end-to-end/tests/classes.test.mvm.js:69:27
@@ -1057,8 +1055,7 @@ function LocalClass8() {
 function anonymous1() {
   entry:
     LoadScoped(index 1);                 // 1  x              ./test/end-to-end/tests/classes.test.mvm.js:172:24
-    Literal(lit 1);                      // 2                 ./test/end-to-end/tests/classes.test.mvm.js:172:24
-    BinOp(op '+');                       // 1                 ./test/end-to-end/tests/classes.test.mvm.js:172:24
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 1  ./test/end-to-end/tests/classes.test.mvm.js:172:24
     LoadVar(index 0);                    // 2                 ./test/end-to-end/tests/classes.test.mvm.js:172:24
     StoreScoped(index 1);                // 1  x              ./test/end-to-end/tests/classes.test.mvm.js:172:24
     LoadScoped(index 5);                 // 2  y              ./test/end-to-end/tests/classes.test.mvm.js:172:30
@@ -1099,8 +1096,7 @@ function test_classProperty() {
     Literal(lit 'x');                    // 6                 ./test/end-to-end/tests/classes.test.mvm.js:186:3
     ObjectGet();                         // 5                 ./test/end-to-end/tests/classes.test.mvm.js:186:3
     LoadVar(index 4);                    // 6                 ./test/end-to-end/tests/classes.test.mvm.js:186:3
-    Literal(lit 1);                      // 7                 ./test/end-to-end/tests/classes.test.mvm.js:186:3
-    BinOp(op '+');                       // 6                 ./test/end-to-end/tests/classes.test.mvm.js:186:3
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 6  ./test/end-to-end/tests/classes.test.mvm.js:186:3
     LoadVar(index 1);                    // 7  inst1          ./test/end-to-end/tests/classes.test.mvm.js:186:3
     Literal(lit 'x');                    // 8                 ./test/end-to-end/tests/classes.test.mvm.js:186:3
     LoadVar(index 5);                    // 9                 ./test/end-to-end/tests/classes.test.mvm.js:186:3
@@ -1333,8 +1329,7 @@ function LocalClass_method() {
   entry:
     LoadScoped(index 1);                 // 1  x              ./test/end-to-end/tests/classes.test.mvm.js:215:14
     LoadVar(index 0);                    // 2                 ./test/end-to-end/tests/classes.test.mvm.js:215:14
-    Literal(lit 1);                      // 3                 ./test/end-to-end/tests/classes.test.mvm.js:215:14
-    BinOp(op '+');                       // 2                 ./test/end-to-end/tests/classes.test.mvm.js:215:14
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 2  ./test/end-to-end/tests/classes.test.mvm.js:215:14
     LoadVar(index 1);                    // 3                 ./test/end-to-end/tests/classes.test.mvm.js:215:14
     StoreScoped(index 1);                // 2  x              ./test/end-to-end/tests/classes.test.mvm.js:215:14
     Pop(count 1);                        // 1                 ./test/end-to-end/tests/classes.test.mvm.js:215:14
@@ -1466,8 +1461,7 @@ function anonymous2() {
     LoadScoped(index 1);                 // 1  this           ./test/end-to-end/tests/classes.test.mvm.js:239:17
     Literal(lit 'x');                    // 2                 ./test/end-to-end/tests/classes.test.mvm.js:239:17
     ObjectGet();                         // 1                 ./test/end-to-end/tests/classes.test.mvm.js:239:17
-    Literal(lit 1);                      // 2                 ./test/end-to-end/tests/classes.test.mvm.js:239:17
-    BinOp(op '+');                       // 1                 ./test/end-to-end/tests/classes.test.mvm.js:239:17
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 1  ./test/end-to-end/tests/classes.test.mvm.js:239:17
     LoadScoped(index 1);                 // 2  this           ./test/end-to-end/tests/classes.test.mvm.js:239:17
     Literal(lit 'x');                    // 3                 ./test/end-to-end/tests/classes.test.mvm.js:239:17
     LoadVar(index 0);                    // 4                 ./test/end-to-end/tests/classes.test.mvm.js:239:17
@@ -1544,8 +1538,7 @@ function anonymous3() {
   entry:
     LoadScoped(index 4);                 // 1  count          ./test/end-to-end/tests/classes.test.mvm.js:252:15
     LoadVar(index 0);                    // 2                 ./test/end-to-end/tests/classes.test.mvm.js:252:15
-    Literal(lit 1);                      // 3                 ./test/end-to-end/tests/classes.test.mvm.js:252:15
-    BinOp(op '+');                       // 2                 ./test/end-to-end/tests/classes.test.mvm.js:252:15
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 2  ./test/end-to-end/tests/classes.test.mvm.js:252:15
     LoadVar(index 1);                    // 3                 ./test/end-to-end/tests/classes.test.mvm.js:252:15
     StoreScoped(index 4);                // 2  count          ./test/end-to-end/tests/classes.test.mvm.js:252:15
     Pop(count 1);                        // 1                 ./test/end-to-end/tests/classes.test.mvm.js:252:15

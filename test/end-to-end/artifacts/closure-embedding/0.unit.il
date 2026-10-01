@@ -105,8 +105,7 @@ function test_basicClosureEmbedding() {
 function anonymous() {
   entry:
     LoadScoped(index 1);                 // 1  x              ./test/end-to-end/tests/closure-embedding.test.mvm.js:18:27
-    Literal(lit 1);                      // 2                 ./test/end-to-end/tests/closure-embedding.test.mvm.js:18:27
-    BinOp(op '+');                       // 1                 ./test/end-to-end/tests/closure-embedding.test.mvm.js:18:27
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 1  ./test/end-to-end/tests/closure-embedding.test.mvm.js:18:27
     LoadVar(index 0);                    // 2                 ./test/end-to-end/tests/closure-embedding.test.mvm.js:18:27
     StoreScoped(index 1);                // 1  x              ./test/end-to-end/tests/closure-embedding.test.mvm.js:18:27
     Return();                            // 0                 ./test/end-to-end/tests/closure-embedding.test.mvm.js:18:27
@@ -115,8 +114,7 @@ function anonymous() {
 function anonymous1() {
   entry:
     LoadScoped(index 3);                 // 1  x              ./test/end-to-end/tests/closure-embedding.test.mvm.js:20:27
-    Literal(lit 1);                      // 2                 ./test/end-to-end/tests/closure-embedding.test.mvm.js:20:27
-    BinOp(op '-');                       // 1                 ./test/end-to-end/tests/closure-embedding.test.mvm.js:20:27
+    NumericUnOp(op '--', numeric type 'f64' (default context)); // 1  ./test/end-to-end/tests/closure-embedding.test.mvm.js:20:27
     LoadVar(index 0);                    // 2                 ./test/end-to-end/tests/closure-embedding.test.mvm.js:20:27
     StoreScoped(index 3);                // 1  x              ./test/end-to-end/tests/closure-embedding.test.mvm.js:20:27
     Return();                            // 0                 ./test/end-to-end/tests/closure-embedding.test.mvm.js:20:27
@@ -168,8 +166,7 @@ function test_declarationClosureEmbedding() {
 function increment() {
   entry:
     LoadScoped(index 1);                 // 1  x              ./test/end-to-end/tests/closure-embedding.test.mvm.js:30:33
-    Literal(lit 1);                      // 2                 ./test/end-to-end/tests/closure-embedding.test.mvm.js:30:33
-    BinOp(op '+');                       // 1                 ./test/end-to-end/tests/closure-embedding.test.mvm.js:30:33
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 1  ./test/end-to-end/tests/closure-embedding.test.mvm.js:30:33
     LoadVar(index 0);                    // 2                 ./test/end-to-end/tests/closure-embedding.test.mvm.js:30:33
     StoreScoped(index 1);                // 1  x              ./test/end-to-end/tests/closure-embedding.test.mvm.js:30:33
     Return();                            // 0                 ./test/end-to-end/tests/closure-embedding.test.mvm.js:30:26
@@ -179,8 +176,7 @@ function increment() {
 function decrement() {
   entry:
     LoadScoped(index 3);                 // 1  x              ./test/end-to-end/tests/closure-embedding.test.mvm.js:32:33
-    Literal(lit 1);                      // 2                 ./test/end-to-end/tests/closure-embedding.test.mvm.js:32:33
-    BinOp(op '-');                       // 1                 ./test/end-to-end/tests/closure-embedding.test.mvm.js:32:33
+    NumericUnOp(op '--', numeric type 'f64' (default context)); // 1  ./test/end-to-end/tests/closure-embedding.test.mvm.js:32:33
     LoadVar(index 0);                    // 2                 ./test/end-to-end/tests/closure-embedding.test.mvm.js:32:33
     StoreScoped(index 3);                // 1  x              ./test/end-to-end/tests/closure-embedding.test.mvm.js:32:33
     Return();                            // 0                 ./test/end-to-end/tests/closure-embedding.test.mvm.js:32:26
@@ -231,8 +227,7 @@ function test_loop() {
     ScopePop();                          // 4                 ./test/end-to-end/tests/closure-embedding.test.mvm.js:47:4
     LoadVar(index 3);                    // 5  i              ./test/end-to-end/tests/closure-embedding.test.mvm.js:42:27
     LoadVar(index 4);                    // 6                 ./test/end-to-end/tests/closure-embedding.test.mvm.js:42:27
-    Literal(lit 1);                      // 7                 ./test/end-to-end/tests/closure-embedding.test.mvm.js:42:27
-    BinOp(op '+');                       // 6                 ./test/end-to-end/tests/closure-embedding.test.mvm.js:42:27
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 6  ./test/end-to-end/tests/closure-embedding.test.mvm.js:42:27
     LoadVar(index 5);                    // 7                 ./test/end-to-end/tests/closure-embedding.test.mvm.js:42:27
     StoreVar(index 3);                   // 6  i              ./test/end-to-end/tests/closure-embedding.test.mvm.js:42:27
     Pop(count 1);                        // 5                 ./test/end-to-end/tests/closure-embedding.test.mvm.js:42:27
@@ -316,8 +311,7 @@ function test_loop() {
 function anonymous2() {
   entry:
     LoadScoped(index 3);                 // 1  x              ./test/end-to-end/tests/closure-embedding.test.mvm.js:44:20
-    Literal(lit 1);                      // 2                 ./test/end-to-end/tests/closure-embedding.test.mvm.js:44:20
-    BinOp(op '+');                       // 1                 ./test/end-to-end/tests/closure-embedding.test.mvm.js:44:20
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 1  ./test/end-to-end/tests/closure-embedding.test.mvm.js:44:20
     LoadVar(index 0);                    // 2                 ./test/end-to-end/tests/closure-embedding.test.mvm.js:44:20
     StoreScoped(index 3);                // 1  x              ./test/end-to-end/tests/closure-embedding.test.mvm.js:44:20
     Return();                            // 0                 ./test/end-to-end/tests/closure-embedding.test.mvm.js:44:20
@@ -334,8 +328,7 @@ function anonymous3() {
 function anonymous4() {
   entry:
     LoadScoped(index 1);                 // 1  x              ./test/end-to-end/tests/closure-embedding.test.mvm.js:49:23
-    Literal(lit 1);                      // 2                 ./test/end-to-end/tests/closure-embedding.test.mvm.js:49:23
-    BinOp(op '-');                       // 1                 ./test/end-to-end/tests/closure-embedding.test.mvm.js:49:23
+    NumericUnOp(op '--', numeric type 'f64' (default context)); // 1  ./test/end-to-end/tests/closure-embedding.test.mvm.js:49:23
     LoadVar(index 0);                    // 2                 ./test/end-to-end/tests/closure-embedding.test.mvm.js:49:23
     StoreScoped(index 1);                // 1  x              ./test/end-to-end/tests/closure-embedding.test.mvm.js:49:23
     Return();                            // 0                 ./test/end-to-end/tests/closure-embedding.test.mvm.js:49:23
@@ -344,8 +337,7 @@ function anonymous4() {
 function anonymous5() {
   entry:
     LoadScoped(index 3);                 // 1  x              ./test/end-to-end/tests/closure-embedding.test.mvm.js:51:24
-    Literal(lit 1);                      // 2                 ./test/end-to-end/tests/closure-embedding.test.mvm.js:51:24
-    BinOp(op '-');                       // 1                 ./test/end-to-end/tests/closure-embedding.test.mvm.js:51:24
+    NumericUnOp(op '--', numeric type 'f64' (default context)); // 1  ./test/end-to-end/tests/closure-embedding.test.mvm.js:51:24
     LoadVar(index 0);                    // 2                 ./test/end-to-end/tests/closure-embedding.test.mvm.js:51:24
     StoreScoped(index 3);                // 1  x              ./test/end-to-end/tests/closure-embedding.test.mvm.js:51:24
     Return();                            // 0                 ./test/end-to-end/tests/closure-embedding.test.mvm.js:51:24

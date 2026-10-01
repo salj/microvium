@@ -13,8 +13,8 @@ import { encodeSnapshot } from './encode-snapshot';
 import { maxOperandCount, minOperandCount } from './il-opcodes';
 import { binaryNumeric, compareNumeric, convertNumeric, NumericError, numericTypeName, unaryNumeric } from './numeric-types';
 import type { NumericValueData } from './numeric-types';
+import type { NamedExport, NamedImport } from './ffi';
 export * from "./virtual-machine-types";
-import fs from 'fs';
 
 interface DebuggerInstrumentationState {
   debugServer: SynchronousWebSocketServer;
@@ -80,6 +80,11 @@ export class VirtualMachine {
   private exception: IL.Value | undefined;
   private functions = new Map<IL.FunctionID, VM.Function>();
   private exports = new Map<IL.ExportID, IL.Value>();
+  private namedImportDescriptors = new Map<IL.HostFunctionID, NamedImport>();
+  private namedImportIDs = new Map<string, IL.HostFunctionID>();
+  private namedExportValues = new Map<string, IL.Value>();
+  private namedExportSignatures = new Map<string, NamedExport['signature']>();
+  private nextNamedImportID = 0xFFFF;
   // Ephemeral functions are functions that are only relevant in the current
   // epoch, and will throw as "not available" in the next epoch (after
   // snapshotting).
@@ -109,7 +114,8 @@ export class VirtualMachine {
     resumeFromSnapshot: SnapshotIL | undefined,
     private resolveFFIImport: VM.ResolveFFIImport,
     opts: VM.VirtualMachineOptions,
-    debugServer?: SynchronousWebSocketServer
+    debugServer?: SynchronousWebSocketServer,
+    private resolveNamedFFIImport?: VM.ResolveNamedFFIImport,
   ) {
     const defaultFloatWidth = opts.defaultFloatWidth ?? 64;
     this.opts = {
@@ -166,8 +172,8 @@ export class VirtualMachine {
       this.opts.executionFlags.push(IL.ExecutionFlag.NumericTypes);
     }
 
-    if (this.opts.outputIL && moduleSource.debugFilename && !moduleSource.debugFilename.startsWith('<') /* E.g. <builtins> */) {
-      fs.writeFileSync(moduleSource.debugFilename + '.il', stringifyUnit(unit, {
+    if (this.opts.outputIL && this.opts.writeDebugFile && moduleSource.debugFilename && !moduleSource.debugFilename.startsWith('<') /* E.g. <builtins> */) {
+      this.opts.writeDebugFile(moduleSource.debugFilename + '.il', stringifyUnit(unit, {
         commentSourceLocations: true,
         showComments: true,
         showStackDepth: true,
@@ -206,6 +212,11 @@ export class VirtualMachine {
     }
 
     const loadedUnit = this.loadUnit(unit, filename, moduleImports, undefined);
+    for (const namedExport of unit.namedExports ?? []) {
+      if (this.namedExportValues.has(namedExport.exportName)) {
+        throw new Error(`Duplicate named FFI export: ${namedExport.exportName}`);
+      }
+    }
 
     this.pushFrame({
       type: 'ExternalFrame',
@@ -219,6 +230,11 @@ export class VirtualMachine {
     this.callCommon(loadedUnit.entryFunction, [moduleObject], true, IL.undefinedValue);
     // Execute
     this.run();
+    for (const namedExport of unit.namedExports ?? []) {
+      const value = this.getProperty(moduleObject, IL.stringValue(namedExport.exportName));
+      this.namedExportValues.set(namedExport.exportName, value);
+      this.namedExportSignatures.set(namedExport.exportName, namedExport.signature);
+    }
     this.popFrame();
 
     this.tryRunJobQueue();
@@ -241,6 +257,18 @@ export class VirtualMachine {
     const globalSlots = _.clone(this.globalSlots);
     const frame = _.clone(this.frame);
     const exports = _.clone(this.exports);
+    const namedExports: NamedExport[] = [];
+    for (const [exportName, exportValue] of this.namedExportValues) {
+      let exportID = 0;
+      while (exports.has(exportID)) exportID++;
+      if (exportID > 0xFFFF) return invalidOperation('Too many named exports');
+      exports.set(exportID, exportValue);
+      namedExports.push({
+        exportID,
+        exportName,
+        signature: notUndefined(this.namedExportSignatures.get(exportName)),
+      });
+    }
     const hostFunctions = _.clone(this.hostFunctions);
     const functions = _.clone(this.functions);
     const builtins = _.clone(this.builtins);
@@ -281,6 +309,8 @@ export class VirtualMachine {
       globalSlots,
       functions,
       exports,
+      namedImports: [...this.namedImportDescriptors.values()].filter(item => hostFunctions.has(item.hostFunctionID)),
+      namedExports,
       allocations,
       flags,
       numericOptions: { defaultFloatWidth: this.opts.defaultFloatWidth ?? 64 },
@@ -388,6 +418,9 @@ export class VirtualMachine {
   }
 
   public vmImport(hostFunctionID: IL.HostFunctionID, defaultImplementation?: VM.HostFunctionHandler): IL.HostFunctionValue {
+    if (this.namedImportDescriptors.has(hostFunctionID)) {
+      return this.runtimeError(`Numeric host import ID ${hostFunctionID} conflicts with a named import`);
+    }
     if (this.hostFunctions.has(hostFunctionID)) {
       return {
         type: 'HostFunctionValue',
@@ -431,6 +464,20 @@ export class VirtualMachine {
     return this.exports.get(exportID)!;
   }
 
+  public resolveNamedExport(exportName: string): IL.Value {
+    if (!this.namedExportValues.has(exportName)) return invalidOperation(`Named export not found: ${exportName}`);
+    return notUndefined(this.namedExportValues.get(exportName));
+  }
+
+  private allocateNamedImportID(reservedIDs: Set<number>): IL.HostFunctionID {
+    while (this.nextNamedImportID >= 0 &&
+      (reservedIDs.has(this.nextNamedImportID) || this.hostFunctions.has(this.nextNamedImportID) || this.namedImportDescriptors.has(this.nextNamedImportID))) {
+      this.nextNamedImportID--;
+    }
+    if (this.nextNamedImportID < 0) return invalidOperation('Too many host function imports');
+    return this.nextNamedImportID--;
+  }
+
   public setArrayPrototype(value: IL.Value) {
     this.builtins.arrayPrototype = value;
   }
@@ -451,6 +498,29 @@ export class VirtualMachine {
     moduleHostContext?: any
   ): { entryFunction: IL.FunctionValue } {
     const self = this;
+    const remappedNamedImportIDs = new Map<IL.HostFunctionID, IL.HostFunctionID>();
+    const reservedIDs = new Set(unit.reservedHostFunctionIDs ?? []);
+    for (const namedImport of unit.namedImports ?? []) {
+      const identity = `${namedImport.moduleName}\u0000${namedImport.importName}`;
+      let resolvedID = this.namedImportIDs.get(identity);
+      if (resolvedID === undefined) {
+        resolvedID = this.allocateNamedImportID(reservedIDs);
+        this.namedImportIDs.set(identity, resolvedID);
+        const resolvedMetadata = { ...namedImport, hostFunctionID: resolvedID };
+        this.namedImportDescriptors.set(resolvedID, resolvedMetadata);
+        const handler = this.resolveNamedFFIImport?.(namedImport) ?? {
+          call() { throw new Error(`Named host import not provided: ${namedImport.moduleName}:${namedImport.importName}`); },
+          unwrap() { return undefined; },
+        };
+        this.hostFunctions.set(resolvedID, handler);
+      } else {
+        const previous = this.namedImportDescriptors.get(resolvedID) ?? unexpected();
+        if (previous.signature.parameters.length !== namedImport.signature.parameters.length) {
+          return this.runtimeError(`Conflicting signatures for named import ${namedImport.moduleName}:${namedImport.importName}`);
+        }
+      }
+      remappedNamedImportIDs.set(namedImport.hostFunctionID, resolvedID);
+    }
 
     // Create required globals but mark them as uncreated. This is a subtly
     // different to TDZ. In JS if you access a global variable that hasn't been
@@ -550,6 +620,16 @@ export class VirtualMachine {
         // to `remappedFunctionIDs` to get new allocation IDs. Then literal that
         // reference allocations must also be remapped.
         return notImplemented('Reference literals');
+      } else if (literal.type === 'HostFunctionValue') {
+        const newHostFunctionID = remappedNamedImportIDs.get(literal.value);
+        if (newHostFunctionID === undefined) return operation;
+        return {
+          ...operation,
+          operands: [{
+            type: 'LiteralOperand',
+            literal: { ...literal, value: newHostFunctionID }
+          }]
+        };
       } else {
         return operation;
       }
@@ -566,7 +646,7 @@ export class VirtualMachine {
       if (!slotID) {
         return invalidOperation(`Could not resolve variable: ${nameOperand.name}`);
       };
-      return {
+        return {
         ...operation,
         operands: [{
           type: 'NameOperand',
@@ -2609,6 +2689,10 @@ export class VirtualMachine {
     if (funcValue.type === 'HostFunctionValue') {
       if (!this.frame) {
         return unexpected();
+      }
+      const namedImport = this.namedImportDescriptors.get(funcValue.value);
+      if (namedImport && args.length - 1 !== namedImport.signature.parameters.length) {
+        return this.runtimeError(`Named FFI arity mismatch for ${namedImport.moduleName}:${namedImport.importName}; expected ${namedImport.signature.parameters.length}, received ${args.length - 1}`);
       }
       const extFunc = this.hostFunctions.get(funcValue.value);
       if (!extFunc) {

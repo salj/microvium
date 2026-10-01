@@ -1,4 +1,7 @@
 {
+  'variables': {
+    'mvm_support_legacy_bytecode%': 0
+  },
   'targets': [
     {
       'target_name': 'native-vm',
@@ -16,6 +19,11 @@
         "native-vm-bindings"
       ],
       'dependencies': ["<!(node -p \"require('node-addon-api').gyp\")"],
+      'conditions': [
+        ['mvm_support_legacy_bytecode==1', {
+          'defines': [ 'MVM_SUPPORT_LEGACY_BYTECODE=1' ]
+        }]
+      ],
       'cflags!': [ '-fno-exceptions' ],
       'cflags_cc!': [ '-fno-exceptions' ],
       'xcode_settings': {

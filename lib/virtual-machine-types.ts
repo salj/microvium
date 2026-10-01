@@ -1,6 +1,7 @@
 import * as IL from './il';
 import { VirtualMachine } from './virtual-machine';
 import { ModuleSourceText } from '../lib';
+import type { NamedImport } from './ffi';
 
 export const VM_OIS_PROMISE_STATUS = 2;
 export const VM_OIS_PROMISE_OUT = 3;
@@ -17,6 +18,7 @@ export type PropertyKey = string;
 export type Index = number;
 
 export type ResolveFFIImport = (hostFunctionID: IL.HostFunctionID) => HostFunctionHandler | undefined;
+export type ResolveNamedFFIImport = (item: NamedImport) => HostFunctionHandler | undefined;
 
 export type ModuleResolver = (moduleSource: ModuleRelativeSource) => ModuleObject;
 
@@ -65,7 +67,11 @@ export interface VirtualMachineOptions {
   noLib?: boolean;
   // For debug purposes: output the IL of every compiled unit
   outputIL?: boolean;
+  /** Host adapter for optional compiler debug files. */
+  writeDebugFile?: (filename: string, contents: string) => void;
   defaultFloatWidth?: FloatWidth;
+  /** Host implementations for static named FFI imports, keyed by module and name. */
+  namedImports?: Record<string, Record<string, (...args: any[]) => any>>;
 }
 
 export interface GlobalDefinitions {

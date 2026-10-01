@@ -21,13 +21,25 @@ slot testStringToInt = &function testStringToInt;
 slot testSubtraction = &function testSubtraction;
 slot testUnaryPlus = &function testUnaryPlus;
 
+function ['Microvium.numericIsInteger']() {
+  entry:
+    LoadArg(index 1);
+    NumericIsInteger();
+    Return();
+}
+
+function ['Microvium.numericKindOf']() {
+  entry:
+    LoadArg(index 1);
+    NumericKindOf();
+    Return();
+}
+
 function Number_isNaN() {
   entry:
-    // NaN is the only value that is not equal to itself
     LoadArg(index 1);
     LoadArg(index 1);
     BinOp(op '!==');
-    // NaN is the only value that is not equal to itself
     Return();
 }
 
@@ -606,8 +618,7 @@ function testIncrDecr() {
     Literal(lit undefined);
     LoadVar(index 0);
     LoadVar(index 3);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 4);
     StoreVar(index 0);
     Pop(count 1);
@@ -621,8 +632,7 @@ function testIncrDecr() {
     LoadGlobal(name 'global:assertEqual');
     Literal(lit undefined);
     LoadVar(index 0);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 3);
     StoreVar(index 0);
     Literal(lit 3);
@@ -636,8 +646,7 @@ function testIncrDecr() {
     Literal(lit undefined);
     LoadVar(index 0);
     LoadVar(index 3);
-    Literal(lit 1);
-    BinOp(op '-');
+    NumericUnOp(op '--', numeric type 'f64' (default context));
     LoadVar(index 4);
     StoreVar(index 0);
     Pop(count 1);
@@ -651,8 +660,7 @@ function testIncrDecr() {
     LoadGlobal(name 'global:assertEqual');
     Literal(lit undefined);
     LoadVar(index 0);
-    Literal(lit 1);
-    BinOp(op '-');
+    NumericUnOp(op '--', numeric type 'f64' (default context));
     LoadVar(index 3);
     StoreVar(index 0);
     Literal(lit 1);
@@ -669,8 +677,7 @@ function testIncrDecr() {
     LoadGlobal(name 'global:assertEqual');
     Literal(lit undefined);
     LoadVar(index 0);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 3);
     StoreVar(index 0);
     Literal(lit 2.5);
@@ -678,8 +685,7 @@ function testIncrDecr() {
     LoadGlobal(name 'global:assertEqual');
     Literal(lit undefined);
     LoadVar(index 0);
-    Literal(lit 1);
-    BinOp(op '-');
+    NumericUnOp(op '--', numeric type 'f64' (default context));
     LoadVar(index 3);
     StoreVar(index 0);
     Literal(lit 1.5);
@@ -1387,5 +1393,7 @@ function testUnaryPlus() {
 }
 
 allocation 6 = {
+  isInteger: &function ['Microvium.numericIsInteger'],
   isNaN: &function Number_isNaN,
+  kind: &function ['Microvium.numericKindOf'],
 };

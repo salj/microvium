@@ -9,6 +9,8 @@ import { compileError, compileErrorIfReachable, featureNotSupported, internalCom
 import { formatSourceLoc } from '../stringify-il';
 import { NumericSourceInfo, analyzeNumericAnnotations, parseExactIntegerLiteral } from './numeric-annotations';
 import { NumericFlavor, NumericType, NumericValueData, binaryNumeric, convertNumeric, numericTypeName } from '../numeric-types';
+import { ffiSignatureKey, parseFFISignature } from '../ffi';
+import type { NamedExport, NamedImport } from '../ffi';
 
 const outputStackDepthComments = false;
 
@@ -112,7 +114,9 @@ export function compileScript(
   const defaultFloatWidth = opts?.defaultFloatWidth ?? 64;
   const fileDefaultFloatWidth = numericSourceInfo.fileDefaultFloatWidth ?? defaultFloatWidth;
 
-  const scopeAnalysis = analyzeScopes(file, filename, opts?.awaitStackDepths);
+  const namedImportInfo = collectNamedImports(file);
+  const namedExports = collectNamedExports(file);
+  const scopeAnalysis = analyzeScopes(file, filename, opts?.awaitStackDepths, namedImportInfo.byLocalName);
 
   const ctx: Context = {
     filename,
@@ -135,6 +139,9 @@ export function compileScript(
     freeVariables: [...scopeAnalysis.freeVariables].filter(x => !specialForms.has(x)),
     entryFunctionID: undefined as any, // Filled out later
     moduleImports: [],
+    namedImports: namedImportInfo.imports,
+    namedExports,
+    reservedHostFunctionIDs: namedImportInfo.reservedHostFunctionIDs,
   };
 
   const cur: Cursor = {
@@ -158,6 +165,9 @@ export function compileScript(
   for (const statement of file.program.body) {
     if (statement.type === 'ImportDeclaration') {
       compilingNode(cur, statement);
+      const isNamedFFIImport = statement.specifiers.length > 0 && statement.specifiers.every(specifier =>
+        specifier.type === 'ImportSpecifier' && namedImportInfo.byLocalName.has(specifier.local.name));
+      if (isNamedFFIImport) continue;
       const source = statement.source.value;
       const info = scopeAnalysis.moduleImports.get(source);
       unit.moduleImports.push({
@@ -276,6 +286,117 @@ export function parseToAst(filename: string, scriptText: string) {
   } catch (e) {
     throw !e.loc ? e : new MicroviumSyntaxError(`${e.message}\n      at (${filename}:${e.loc.line}:${e.loc.column})`);
   }
+}
+
+function collectNamedImports(file: B.File): {
+  imports: NamedImport[];
+  byLocalName: Map<string, NamedImport>;
+  reservedHostFunctionIDs: number[];
+} {
+  const legacyHostFunctionIDs = findDirectBuiltinCallIDs(file, 'vmImport');
+  const reservedIDs = new Set(legacyHostFunctionIDs);
+  const byIdentity = new Map<string, NamedImport>();
+  const byLocalName = new Map<string, NamedImport>();
+  const imports: NamedImport[] = [];
+
+  for (const statement of file.program.body) {
+    if (statement.type !== 'ImportDeclaration') continue;
+    const comment = (statement.leadingComments ?? []).map(c => c.value).join('\n');
+    const signature = parseFFISignature(comment);
+    if (!signature) {
+      if (/@mvm-ffi\b/.test(comment)) throw new Error('Named FFI imports require an explicit @mvm-ffi signature');
+      continue;
+    }
+    if (statement.specifiers.length === 0 || statement.specifiers.some(s => s.type !== 'ImportSpecifier')) {
+      throw new Error('Named FFI supports only static named function imports');
+    }
+
+    const moduleName = statement.source.value;
+    for (const specifier of statement.specifiers) {
+      if (specifier.type !== 'ImportSpecifier') return unexpected();
+      const importName = specifier.imported.type === 'Identifier' ? specifier.imported.name : specifier.imported.value;
+      const identity = `${moduleName}\u0000${importName}`;
+      let item = byIdentity.get(identity);
+      if (item) {
+        if (ffiSignatureKey(item.signature) !== ffiSignatureKey(signature)) {
+          throw new Error(`Conflicting signatures for named import ${moduleName}:${importName}`);
+        }
+      } else {
+        const hostFunctionID = firstFreeID(reservedIDs);
+        reservedIDs.add(hostFunctionID);
+        item = { hostFunctionID, moduleName, importName, signature };
+        imports.push(item);
+        byIdentity.set(identity, item);
+      }
+      byLocalName.set(specifier.local.name, item);
+    }
+  }
+  return { imports, byLocalName, reservedHostFunctionIDs: [...legacyHostFunctionIDs] };
+}
+
+function collectNamedExports(file: B.File): NamedExport[] {
+  const reservedIDs = findDirectBuiltinCallIDs(file, 'vmExport');
+  const exports: NamedExport[] = [];
+  const names = new Set<string>();
+  for (const statement of file.program.body) {
+    if (statement.type !== 'ExportNamedDeclaration') continue;
+    const comment = (statement.leadingComments ?? []).map(c => c.value).join('\n');
+    if (!/@mvm-ffi\b/.test(comment)) continue;
+    if (statement.source || statement.specifiers.length) {
+      throw new Error('Named FFI supports only direct function exports');
+    }
+    const declaration = statement.declaration;
+    if (!declaration || declaration.type !== 'FunctionDeclaration' || !declaration.id) {
+      throw new Error('Named FFI supports only function exports');
+    }
+    const exportName = declaration.id.name;
+    if (names.has(exportName)) throw new Error(`Duplicate named FFI export: ${exportName}`);
+    names.add(exportName);
+    const parameterCount = declaration.params.length;
+    if (parameterCount > 255 || declaration.params.some(p => p.type !== 'Identifier')) {
+      throw new Error(`Named FFI export ${exportName} must have at most 255 simple parameters`);
+    }
+    const annotatedSignature = parseFFISignature(comment);
+    if (annotatedSignature && annotatedSignature.parameters.length !== parameterCount) {
+      throw new Error(`Named FFI export ${exportName} signature does not match its declared arity`);
+    }
+    const exportID = firstFreeID(reservedIDs);
+    reservedIDs.add(exportID);
+    exports.push({
+      exportID,
+      exportName,
+      signature: { parameters: Array(parameterCount).fill('Value'), result: 'Value' },
+    });
+  }
+  return exports;
+}
+
+function findDirectBuiltinCallIDs(file: B.File, builtinName: 'vmImport' | 'vmExport'): Set<number> {
+  const ids = new Set<number>();
+  const visited = new WeakSet<object>();
+  visit(file);
+  return ids;
+
+  function visit(node: any) {
+    if (!node || typeof node !== 'object' || visited.has(node)) return;
+    visited.add(node);
+    if (node.type === 'CallExpression' && node.callee?.type === 'Identifier' && node.callee.name === builtinName) {
+      const first = node.arguments?.[0];
+      if (first?.type === 'NumericLiteral' && Number.isInteger(first.value) && first.value >= 0 && first.value <= 0xFFFF) {
+        ids.add(first.value);
+      }
+    }
+    for (const [key, value] of Object.entries(node)) {
+      if (key === 'loc' || key === 'start' || key === 'end' || key === 'tokens' || key === 'comments') continue;
+      if (Array.isArray(value)) for (const child of value) visit(child);
+      else visit(value);
+    }
+  }
+}
+
+function firstFreeID(reserved: Set<number>): number {
+  for (let id = 0; id <= 0xFFFF; id++) if (!reserved.has(id)) return id;
+  throw new Error('Too many FFI call slots');
 }
 
 export function compileModuleStatement(cur: Cursor, statement: B.Statement) {
@@ -1071,6 +1192,7 @@ function literalOperandValue(value: IL.LiteralValueType): IL.Value {
   if (value === null) {
     return IL.nullValue;
   }
+  if (typeof value === 'object') return value;
   switch (typeof value) {
     case 'undefined': return IL.undefinedValue;
     case 'boolean': return { type: 'BooleanValue', value };
@@ -2326,6 +2448,17 @@ export function getSlotAccessor(cur: Cursor, slotAccess: SlotAccessInfo, readonl
       const propertyName = LazyValue(cur => addOp(cur, 'Literal', literalOperand(slotAccess.propertyName)));
       const propertySlot = getObjectMemberAccessor(cur, object, propertyName);
       return propertySlot;
+    }
+
+    case 'NamedFFIImportSlot': {
+      return {
+        load(cur: Cursor) {
+          addOp(cur, 'Literal', literalOperand(IL.hostFunctionValue(slotAccess.hostFunctionID)));
+        },
+        store(_cur: Cursor, _value: LazyValue) {
+          return compileError(cur, 'Cannot assign to an imported function');
+        }
+      };
     }
 
     case 'LocalSlot': {

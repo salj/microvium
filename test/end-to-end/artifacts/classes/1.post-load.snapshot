@@ -48,8 +48,7 @@ function GlobalClass_myMethod() {
     LoadArg(index 0);
     Literal(lit 'x');
     ObjectGet();
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadArg(index 0);
     Literal(lit 'x');
     LoadVar(index 0);
@@ -311,8 +310,7 @@ function LocalClass_method() {
   entry:
     LoadScoped(index 1);
     LoadVar(index 0);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 1);
     StoreScoped(index 1);
     Pop(count 1);
@@ -335,8 +333,7 @@ function LocalClass_myMethod() {
     LoadArg(index 0);
     Literal(lit 'x');
     ObjectGet();
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadArg(index 0);
     Literal(lit 'x');
     LoadVar(index 0);
@@ -378,13 +375,25 @@ function ['Microvium.newUint8Array']() {
     Return();
 }
 
+function ['Microvium.numericIsInteger']() {
+  entry:
+    LoadArg(index 1);
+    NumericIsInteger();
+    Return();
+}
+
+function ['Microvium.numericKindOf']() {
+  entry:
+    LoadArg(index 1);
+    NumericKindOf();
+    Return();
+}
+
 function Number_isNaN() {
   entry:
-    // NaN is the only value that is not equal to itself
     LoadArg(index 1);
     LoadArg(index 1);
     BinOp(op '!==');
-    // NaN is the only value that is not equal to itself
     Return();
 }
 
@@ -404,8 +413,7 @@ function anonymous() {
 function anonymous1() {
   entry:
     LoadScoped(index 1);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 0);
     StoreScoped(index 1);
     LoadScoped(index 5);
@@ -418,8 +426,7 @@ function anonymous2() {
     LoadScoped(index 1);
     Literal(lit 'x');
     ObjectGet();
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadScoped(index 1);
     Literal(lit 'x');
     LoadVar(index 0);
@@ -431,8 +438,7 @@ function anonymous3() {
   entry:
     LoadScoped(index 4);
     LoadVar(index 0);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 1);
     StoreScoped(index 4);
     Pop(count 1);
@@ -641,8 +647,7 @@ function test_classProperty() {
     Literal(lit 'x');
     ObjectGet();
     LoadVar(index 4);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 1);
     Literal(lit 'x');
     LoadVar(index 5);
@@ -1763,9 +1768,13 @@ allocation 4 = {
   isMicrovium: true,
   newUint8Array: &function ['Microvium.newUint8Array'],
   noOpFunction: no-op-function,
+  numericIsInteger: &function ['Microvium.numericIsInteger'],
+  numericKindOf: &function ['Microvium.numericKindOf'],
   typeCodeOf: &function typeCodeOf,
 };
 
 allocation 6 = {
+  isInteger: &function ['Microvium.numericIsInteger'],
   isNaN: &function Number_isNaN,
+  kind: &function ['Microvium.numericKindOf'],
 };

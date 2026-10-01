@@ -1,6 +1,7 @@
 import { IL } from '../../../lib';
 import { ModuleRelativeSource } from '../../virtual-machine-types';
 import * as B from '../supported-babel-types';
+import type { NamedImport } from '../../ffi';
 
 /**
  * The output model of `analyzeScopes()`
@@ -56,6 +57,7 @@ export type Slot =
   | LocalSlot
   | ArgumentSlot
   | ModuleImportExportSlot
+  | NamedFFIImportSlot
 
 // An IL variable slot at the module level
 export interface GlobalSlot {
@@ -91,6 +93,14 @@ export interface ModuleImportExportSlot {
   type: 'ModuleImportExportSlot';
   moduleNamespaceObjectSlot: GlobalSlot;
   propertyName: string;
+}
+
+/** A statically linked named host function; no module object is created. */
+export interface NamedFFIImportSlot {
+  type: 'NamedFFIImportSlot';
+  hostFunctionID: number;
+  moduleName: string;
+  importName: string;
 }
 
 export interface ScopeBase {
@@ -364,6 +374,7 @@ export interface Reference {
 export type SlotAccessInfo =
   | GlobalSlot
   | ModuleImportExportSlot
+  | NamedFFIImportSlot
   | LocalSlot
   | ArgumentSlot
   | ClosureSlotAccess

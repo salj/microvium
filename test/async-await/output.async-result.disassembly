@@ -1,36 +1,37 @@
-Bytecode size: 212 B
+Bytecode size: 220 B
 
 Addr    Size
 ==== =======
 0000   1c  - # Header
-0000       1     bytecodeVersion: 8
+0000       1     bytecodeVersion: 9
 0001       1     headerSize: 28
 0002       1     requiredEngineVersion: 0
-0003       1     reserved: 0
-0004       2     bytecodeSize: 212
-0006       2     expectedCRC: a130
-0008       4     requiredFeatureFlags: 3
-000c       2     BCS_IMPORT_TABLE: 001c
-000e       2     BCS_EXPORT_TABLE: 0020
-0010       2     BCS_SHORT_CALL_TABLE: 0024
-0012       2     BCS_BUILTINS: 0024
-0014       2     BCS_STRING_TABLE: 0032
-0016       2     BCS_ROM: 0036
-0018       2     BCS_GLOBALS: 00b8
-001a       2     BCS_HEAP: 00c6
+0003       1     numericOptions: 0
+0004       2     bytecodeSize: 220
+0006       2     expectedCRC: dc07
+0008       2     requiredFeatureFlags: 3
+000a       2     BCS_IMPORT_TABLE: 001c
+000c       2     BCS_EXPORT_TABLE: 0020
+000e       2     BCS_SHORT_CALL_TABLE: 0024
+0010       2     BCS_BUILTINS: 0024
+0012       2     BCS_STRING_TABLE: 0032
+0014       2     BCS_ROM: 0036
+0016       2     BCS_FFI_TABLE: 00b8
+0018       2     BCS_GLOBALS: 00c0
+001a       2     BCS_HEAP: 00ce
 001c    4  - # Import Table
 001c       2     [0]: 0
 001e       2     [1]: 1
 0020    4  - # Export Table
 0020       4     [0]: &0080
 0024    e  - # Builtins
-0024       2     [BIN_INTERNED_STRINGS]: &00c4
+0024       2     [BIN_INTERNED_STRINGS]: &00cc
 0026       2     [BIN_ARRAY_PROTO]: undefined
 0028       2     [BIN_STR_PROTOTYPE]: undefined
 002a       2     [BIN_ASYNC_CONTINUE]: &0064
 002c       2     [BIN_ASYNC_CATCH_BLOCK]: &0070
 002e       2     [BIN_ASYNC_HOST_CALLBACK]: &0078
-0030       2     [BIN_PROMISE_PROTOTYPE]: &00c0
+0030       2     [BIN_PROMISE_PROTOTYPE]: &00c8
 0032    4  - # String Table
 0032       2     [0]: &0038
 0034       2     [1]: &0048
@@ -115,20 +116,21 @@ Addr    Size
 00b1       3             Literal(&0038)
 00b4       2             Call(count 2, flag true)
 00b6       2             Jump &00aa
-00b8    e  - # Globals
-00b8       2     [0]: &005c
-00ba       2     [1]: &0060
-00bc       2     [2]: &008c
-00be       2     [3]: deleted
-00c0       2     Handle: &00c8
-00c2       2     Handle: deleted
-00c4       2     Handle: undefined
-00c6    e  - # GC allocations
-00c6       2     Header [Size: 12, Type: TC_REF_PROPERTY_LIST]
-00c8    c  -     # TsPropertyList
-00c8       2         dpNext: null
-00ca       2         dpProto: null
-00cc       2         key: -8192
-00ce       2         value: 2
-00d0       2         key: -1
-00d2       2         value: undefined
+00b8       8 <unused>
+00c0    e  - # Globals
+00c0       2     [0]: &005c
+00c2       2     [1]: &0060
+00c4       2     [2]: &008c
+00c6       2     [3]: deleted
+00c8       2     Handle: &00d0
+00ca       2     Handle: deleted
+00cc       2     Handle: undefined
+00ce    e  - # GC allocations
+00ce       2     Header [Size: 12, Type: TC_REF_PROPERTY_LIST]
+00d0    c  -     # TsPropertyList
+00d0       2         dpNext: null
+00d2       2         dpProto: null
+00d4       2         key: -8192
+00d6       2         value: 2
+00d8       2         key: -1
+00da       2         value: undefined

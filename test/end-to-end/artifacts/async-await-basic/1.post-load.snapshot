@@ -221,8 +221,7 @@ function func3() {
     AsyncStart(count 3, flag true);
     LoadScoped(index 21);
     LoadVar(index 3);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 4);
     StoreScoped(index 21);
     Pop(count 1);
@@ -235,8 +234,7 @@ function func3() {
     Pop(count 1);
     LoadScoped(index 21);
     LoadVar(index 3);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 4);
     StoreScoped(index 21);
     Pop(count 1);

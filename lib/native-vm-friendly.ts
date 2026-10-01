@@ -1,13 +1,15 @@
-import { Snapshot, HostImportFunction, ExportID, HostImportMap, HostFunctionID, MicroviumNativeSubset, MemoryStats, defaultHostEnvironment } from "../lib";
+import { Snapshot, HostImportFunction, ExportID, HostImportMap, HostFunctionID, MicroviumNativeSubset, MemoryStats, NamedHostImportTable, defaultHostEnvironment } from "../lib";
 import { notImplemented, hardAssert, invalidOperation, assertUnreachable, reserved, unexpected } from "./utils";
 import * as NativeVM from "./native-vm";
 import { mvm_TeType } from "./runtime-types";
 import { SnapshotClass } from "./snapshot";
+import { decodeFFIMetadataFromSnapshot, NamedExport } from "./ffi";
 
 export class NativeVMFriendly implements MicroviumNativeSubset {
   private vm: NativeVM.NativeVM;
+  private namedExports: NamedExport[];
 
-  constructor (snapshot: Snapshot, hostImportMap: HostImportMap = defaultHostEnvironment) {
+  constructor (snapshot: Snapshot, hostImportMap: HostImportMap = defaultHostEnvironment, namedImportTable: NamedHostImportTable = {}) {
     let hostImportFunction: HostImportFunction;
     if (typeof hostImportMap !== 'function') {
       hostImportFunction = (hostFunctionID: HostFunctionID): Function => {
@@ -20,9 +22,20 @@ export class NativeVMFriendly implements MicroviumNativeSubset {
       hostImportFunction = hostImportMap;
     }
 
+    this.namedExports = decodeFFIMetadataFromSnapshot(snapshot.data).exports;
     this.vm = new NativeVM.NativeVM(snapshot.data, hostFunctionID => {
       const inner = hostImportFunction(hostFunctionID);
       return this.hostFunctionToVM(inner);
+    }, (moduleName, importName, expectedArgumentCount: number) => {
+      const module = namedImportTable[moduleName];
+      const implementation = module && Object.prototype.hasOwnProperty.call(module, importName)
+        ? module[importName]
+        : undefined;
+      if (typeof implementation !== 'function') return undefined as any;
+      if (implementation.length !== expectedArgumentCount) {
+        return invalidOperation(`MVM_E_FFI_ABI_ERROR: Named import ${moduleName}:${importName} expects ${expectedArgumentCount} parameters, host function declares ${implementation.length}`);
+      }
+      return this.hostFunctionToVM(implementation);
     });
   }
 
@@ -32,6 +45,19 @@ export class NativeVMFriendly implements MicroviumNativeSubset {
 
   resolveExport(exportID: ExportID): any {
     return vmValueToHost(this.vm, this.vm.resolveExport(exportID));
+  }
+
+  resolveNamedExport(exportName: string): any {
+    const descriptor = this.namedExports.find(item => item.exportName === exportName);
+    if (!descriptor) return invalidOperation(`Named export not found: ${exportName}`);
+    const implementation = this.resolveExport(descriptor.exportID);
+    return (...args: any[]) => {
+      const expected = descriptor.signature.parameters.length;
+      if (args.length !== expected) {
+        throw new TypeError(`Named FFI arity mismatch for export ${exportName}; expected ${expected}, received ${args.length}`);
+      }
+      return implementation(...args);
+    };
   }
 
   garbageCollect(squeeze: boolean = false) {

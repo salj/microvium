@@ -1,13 +1,11 @@
 import * as VM from './virtual-machine';
 import * as IL from './il';
-import { mapObject, notImplemented, assertUnreachable, hardAssert, invalidOperation, notUndefined, todo, unexpected, stringifyIdentifier, writeTextFile } from './utils';
+import { mapObject, notImplemented, assertUnreachable, hardAssert, invalidOperation, notUndefined, todo, unexpected, stringifyIdentifier } from './utils';
 import { SnapshotIL, stringifySnapshotIL } from './snapshot-il';
-import type { Microvium, ModuleObject, HostImportFunction, HostImportTable, SnapshottingOptions, ModuleSource, ImportHook, MemoryStats } from '../lib';
+import type { Microvium, ModuleObject, HostImportFunction, HostImportTable, SnapshottingOptions, ModuleSource, ImportHook, MemoryStats, NamedHostImportTable } from '../lib';
 import { SnapshotClass } from './snapshot';
 import { EventEmitter } from 'events';
 // import { SynchronousWebSocketServer } from './synchronous-ws-server';
-import * as fs from 'fs';
-import colors from 'colors';
 import { addBuiltinGlobals } from './builtin-globals';
 import { encodeSnapshot } from './encode-snapshot';
 
@@ -23,12 +21,14 @@ export class VirtualMachineFriendly implements Microvium {
   private vm: VM.VirtualMachine;
   private _global: any;
   private moduleCache = new WeakMap<ModuleSource, VM.ModuleSource>();
+  private writeDebugFile?: (filename: string, contents: string) => void;
 
   public constructor(
     resumeFromSnapshot: SnapshotIL | undefined,
     hostImportMap: HostImportFunction | HostImportTable = {},
     opts: VM.VirtualMachineOptions = {}
   ) {
+    this.writeDebugFile = opts.writeDebugFile;
     let innerResolve: VM.ResolveFFIImport;
     if (typeof hostImportMap !== 'function') {
       if (typeof hostImportMap !== 'object' || hostImportMap === null)  {
@@ -60,7 +60,19 @@ export class VirtualMachineFriendly implements Microvium {
     //   debugServer.waitForConnection();
     //   console.log('Microvium-debug client connected');
     // }
-    this.vm = new VM.VirtualMachine(resumeFromSnapshot, innerResolve, opts, debugServer);
+    const namedImportTable: NamedHostImportTable = opts.namedImports ?? {};
+    const innerResolveNamed: VM.ResolveNamedFFIImport = item => {
+      const module = namedImportTable[item.moduleName];
+      const implementation = module && Object.prototype.hasOwnProperty.call(module, item.importName)
+        ? module[item.importName]
+        : undefined;
+      if (!implementation) return undefined;
+      if (implementation.length !== item.signature.parameters.length) {
+        return invalidOperation(`MVM_E_FFI_ABI_ERROR: Named import ${item.moduleName}:${item.importName} expects ${item.signature.parameters.length} parameters, host function declares ${implementation.length}`);
+      }
+      return hostFunctionToVMHandler(this.vm, implementation);
+    };
+    this.vm = new VM.VirtualMachine(resumeFromSnapshot, innerResolve, opts, debugServer, innerResolveNamed);
     directHostFunctionCalls.set(this.vmExport, (vm, args) => {
       const exportID = args[1]
         ? vmValueToHost(vm, args[1], undefined)
@@ -123,8 +135,9 @@ export class VirtualMachineFriendly implements Microvium {
     if (opts.optimizationHook) {
       snapshotInfo = opts.optimizationHook(snapshotInfo);
     }
-    if (opts.outputSnapshotIL && opts.snapshotILFilename) {
-      fs.writeFileSync(opts.snapshotILFilename, stringifySnapshotIL(snapshotInfo, {
+    const writeDebugFile = opts.writeDebugFile ?? this.writeDebugFile;
+    if (opts.outputSnapshotIL && opts.snapshotILFilename && writeDebugFile) {
+      writeDebugFile(opts.snapshotILFilename, stringifySnapshotIL(snapshotInfo, {
         commentSourceLocations: true,
         showComments: true,
         showStackDepth: true,
@@ -133,7 +146,7 @@ export class VirtualMachineFriendly implements Microvium {
     }
     const generateHTML = false; // For debugging
     const { snapshot, html } = encodeSnapshot(snapshotInfo, generateHTML, opts?.generateSourceMap ?? false);
-    if (html) writeTextFile('snapshot.html', html);
+    if (html && writeDebugFile) writeDebugFile('snapshot.html', html);
     return snapshot;
   }
 
@@ -161,6 +174,10 @@ export class VirtualMachineFriendly implements Microvium {
 
   public resolveExport(exportID: IL.ExportID): any {
     return vmValueToHost(this.vm, this.vm.resolveExport(exportID), `<export ${exportID}>`);
+  }
+
+  public resolveNamedExport(exportName: string): any {
+    return vmValueToHost(this.vm, this.vm.resolveNamedExport(exportName), `<export ${exportName}>`);
   }
 
   public garbageCollect() {

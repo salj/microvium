@@ -368,8 +368,7 @@ function test_breakOutOfCatch() {
     Pop(count 1);
     LoadVar(index 7);
     LoadVar(index 8);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 9);
     StoreVar(index 7);
     Pop(count 1);
@@ -472,8 +471,7 @@ function test_breakOutOfDoubleCatch() {
     Pop(count 1);
     LoadVar(index 1);
     LoadVar(index 2);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 3);
     StoreVar(index 1);
     Pop(count 1);
@@ -558,8 +556,7 @@ function test_breakOutOfTry() {
     Pop(count 1);
     LoadVar(index 1);
     LoadVar(index 2);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 3);
     StoreVar(index 1);
     Pop(count 1);
@@ -653,8 +650,7 @@ function test_breakOutOfTryWithClosure() {
     ScopeClone();
     LoadScoped(index 0);
     LoadVar(index 1);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 2);
     StoreScoped(index 0);
     Pop(count 1);
@@ -821,8 +817,7 @@ function test_conditionalThrow() {
     Pop(count 1);
     LoadVar(index 1);
     LoadVar(index 2);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 3);
     StoreVar(index 1);
     Pop(count 1);

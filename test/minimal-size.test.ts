@@ -14,14 +14,15 @@ suite('minimal-size', function () {
   const coreSize64BitMax = roundUpTo8Bytes(
     (corePointerCount + coreLongPointerCount + coreOptionalPointerCount) * 8 +
     coreOptionalInt32Count * 4 +
-    coreWordCount * 2
+    coreWordCount * 2 + 1 // safe-mode cycle counter
   );
 
   // The core size on a 32-bit embedded device, with optional features
-  const coreSize32BitMax =
+  const coreSize32BitMax = padTo32Bit(
     (corePointerCount + coreLongPointerCount + coreOptionalPointerCount) * 4 +
     coreOptionalInt32Count * 4 +
-    coreWordCount * 2;
+    coreWordCount * 2 + 1 // safe-mode cycle counter
+  );
 
   // The core size on a 32-bit embedded device, without optional features
   const coreSize32BitMin =
@@ -52,13 +53,13 @@ suite('minimal-size', function () {
     const vm = Microvium.create({}, { noLib: true });
     vm.evaluateModule({ sourceText: '' });
     const snapshot = vm.createSnapshot();
-    assert.equal(snapshot.data.length, 46);
+    assert.equal(snapshot.data.length, 54);
 
     // Note: because we're not running this on an emulator, this is the size as
     // running on a 64-bit machine. Also, debug mode is enabled
     const vm2 = Microvium.restore(snapshot, {});
     const stats = vm2.getMemoryStats();
-    assert.equal(stats.totalSize, coreSize64BitMax);
+    assert.equal(stats.totalSize, coreSize64BitMax + 4);
     assert.equal(stats.coreSize, coreSize64BitMax);
     assert.equal(stats.fragmentCount, 1);
     assert.equal(stats.virtualHeapAllocatedCapacity, 0);
@@ -69,10 +70,10 @@ suite('minimal-size', function () {
     assert.equal(stats.stackAllocatedCapacity, 0);
     assert.equal(stats.registersSize, 0);
     assert.equal(stats.importTableSize, 0);
-    assert.equal(stats.globalVariablesSize, 0);
+    assert.equal(stats.globalVariablesSize, 4);
 
     assert.equal(coreSize64BitMax, 88);
-    assert.equal(coreSize32BitMax, 48);
+    assert.equal(coreSize32BitMax, 52);
 
     // Smallest theoretical size:
     assert.equal(coreSize32BitMin, 36);
@@ -83,11 +84,11 @@ suite('minimal-size', function () {
     const vm = Microvium.create({}, {});
     vm.evaluateModule({ sourceText: '' });
     const snapshot = vm.createSnapshot();
-    assert.equal(snapshot.data.length, 46);
+    assert.equal(snapshot.data.length, 54);
 
     const vm2 = Microvium.restore(snapshot, {});
     const stats = vm2.getMemoryStats();
-    assert.equal(stats.totalSize, 88);
+    assert.equal(stats.totalSize, 92);
     assert.equal(stats.coreSize, 88);
     assert.equal(stats.fragmentCount, 1);
     assert.equal(stats.virtualHeapAllocatedCapacity, 0);
@@ -99,7 +100,7 @@ suite('minimal-size', function () {
     assert.equal(stats.stackAllocatedCapacity, 0);
     assert.equal(stats.registersSize, 0);
     assert.equal(stats.importTableSize, 0);
-    assert.equal(stats.globalVariablesSize, 0);
+    assert.equal(stats.globalVariablesSize, 4);
   })
 
   test('running-size', () => { const vm = Microvium.create({}, { });
@@ -145,10 +146,10 @@ suite('minimal-size', function () {
       wordRegisterCount * 2;
 
     const importTableCount = 1; // This example imports one function
-    const importTableSize64Bit = importTableCount * 8;
-    const importTableSize32Bit = importTableCount * 4;
-    const importTableSize16Bit = importTableCount * 4; // Using 4 bytes here because flash pointer
-    const globalVariablesSize = 2; // 1 global variable at 2 bytes each
+    const importTableSize64Bit = importTableCount * 10; // Function pointer plus named-import arity
+    const importTableSize32Bit = importTableCount * 6;
+    const importTableSize16Bit = importTableCount * 6; // Function pointer plus named-import arity
+    const globalVariablesSize = 6; // One global and two reserved runtime slots
 
     const virtualHeapSize = 0; // Now that builtins are GC'd, the virtual heap can be empty
 
@@ -201,7 +202,7 @@ suite('minimal-size', function () {
       vmExport(0, () => checkSize());
     `});
     const snapshot = vm.createSnapshot();
-    assert.equal(snapshot.data.length, 70);
+    assert.equal(snapshot.data.length, 78);
 
     const vm2 = Microvium.restore(snapshot, { 0: checkSize });
 
@@ -225,7 +226,7 @@ suite('minimal-size', function () {
     assert.equal(stats.stackAllocatedCapacity, defaultStackCapacity);
     assert.equal(stats.registersSize, registersSize64BitMax);
     assert.equal(stats.importTableSize, importTableSize64Bit);
-    assert.equal(stats.globalVariablesSize, 2);
+    assert.equal(stats.globalVariablesSize, globalVariablesSize);
 
     // The following is the final figures. Just update them manually when they change
 
@@ -234,10 +235,11 @@ suite('minimal-size', function () {
     assert.equal(registersSize32BitMin, 28);
     assert.equal(registersSize16BitMin, 20);
 
-    assert.equal(totalSize64BitMax, 410);
-    assert.equal(totalSize32BitMax, 342);
-    assert.equal(totalSize32BitMin, 326);
-    assert.equal(totalSize16BitMin, 306);
+    assert.equal(coreSize32BitMax, 52);
+    assert.equal(totalSize64BitMax, 416);
+    assert.equal(totalSize32BitMax, 352);
+    assert.equal(totalSize32BitMin, 332);
+    assert.equal(totalSize16BitMin, 312);
   })
 })
 

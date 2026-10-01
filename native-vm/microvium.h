@@ -15,7 +15,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define MVM_ENGINE_MAJOR_VERSION 8  /* aka MVM_BYTECODE_VERSION */
+#define MVM_ENGINE_MAJOR_VERSION 9  /* aka MVM_BYTECODE_VERSION */
 #define MVM_ENGINE_MINOR_VERSION 1  /* aka MVM_ENGINE_VERSION */
 
 typedef uint16_t mvm_Value;
@@ -84,6 +84,7 @@ typedef enum mvm_TeError {
   /* 58 */ MVM_E_UNINITIALIZED_GLOBAL, // A global variable was not set before it was used.
   /* 59 */ MVM_E_RESERVED_59,
   /* 60 */ MVM_E_NUMERIC_ERROR, // Invalid mixed-numeric operation or conversion.
+  /* 61 */ MVM_E_FFI_ABI_ERROR, // Named FFI signature or binding does not match.
 } mvm_TeError;
 
 typedef enum mvm_TeNumericKind {
@@ -133,6 +134,11 @@ typedef enum mvm_TeType {
 #define MVM_SUPPORT_FLOAT 1
 #endif
 
+/** Enable reading v8.1 snapshots. Snapshot writers always emit the current version. */
+#ifndef MVM_SUPPORT_LEGACY_BYTECODE
+#define MVM_SUPPORT_LEGACY_BYTECODE 0
+#endif
+
 #ifndef MVM_FLOAT64
 #define MVM_FLOAT64 double
 #endif
@@ -146,6 +152,32 @@ typedef struct mvm_VM mvm_VM;
 typedef mvm_TeError (*mvm_TfHostFunction)(mvm_VM* vm, mvm_HostFunctionID hostFunctionID, mvm_Value* result, mvm_Value* args, uint8_t argCount);
 
 typedef mvm_TeError (*mvm_TfResolveImport)(mvm_HostFunctionID hostFunctionID, void* context, mvm_TfHostFunction* out_hostFunction);
+
+typedef enum mvm_TeFFIValueType {
+  MVM_FFI_T_VALUE = 0,
+} mvm_TeFFIValueType;
+
+typedef struct mvm_TsFFISignature {
+  const uint8_t* parameterTypes;
+  uint8_t argumentCount;
+  uint8_t resultType;
+} mvm_TsFFISignature;
+
+typedef struct mvm_TsNamedImportInfo {
+  mvm_HostFunctionID callID;
+  const uint8_t* moduleName;
+  uint16_t moduleNameSize;
+  const uint8_t* importName;
+  uint16_t importNameSize;
+  mvm_TsFFISignature signature;
+} mvm_TsNamedImportInfo;
+
+typedef struct mvm_TsNamedExportInfo {
+  mvm_VMExportID callID;
+  const uint8_t* exportName;
+  uint16_t exportNameSize;
+  mvm_TsFFISignature signature;
+} mvm_TsNamedExportInfo;
 
 typedef void (*mvm_TfBreakpointCallback)(mvm_VM* vm, uint16_t bytecodeAddress);
 
@@ -225,6 +257,24 @@ extern "C" {
  * `mvm_getContext`. It can be used to attach user-defined data to a VM.
  */
 MVM_EXPORT mvm_TeError mvm_restore(mvm_VM** result, MVM_LONG_PTR_TYPE snapshotBytecode, size_t bytecodeSize, void* context, mvm_TfResolveImport resolveImport);
+
+/**
+ * Restore a named-linking snapshot. Named imports are left unbound for the
+ * caller to enumerate and bind. Other imports are passed to resolveImport,
+ * preserving numeric vmImport compatibility. Pass NULL when the snapshot has
+ * no numeric imports.
+ */
+MVM_EXPORT mvm_TeError mvm_restoreNamed(mvm_VM** result, MVM_LONG_PTR_TYPE snapshotBytecode, size_t bytecodeSize, void* context, mvm_TfResolveImport resolveImport);
+MVM_EXPORT mvm_TeError mvm_getNamedImportCount(mvm_VM* vm, uint16_t* out_count);
+MVM_EXPORT mvm_TeError mvm_getNamedExportCount(mvm_VM* vm, uint16_t* out_count);
+/** Scratch size is the full decoded symbol stream plus one maximum-size signature. */
+MVM_EXPORT mvm_TeError mvm_getNamedFFIScratchSize(mvm_VM* vm, size_t* out_size);
+MVM_EXPORT mvm_TeError mvm_getNamedImport(mvm_VM* vm, uint16_t index, uint8_t* scratch, size_t scratchSize, mvm_TsNamedImportInfo* out_info);
+MVM_EXPORT mvm_TeError mvm_getNamedExport(mvm_VM* vm, uint16_t index, uint8_t* scratch, size_t scratchSize, mvm_TsNamedExportInfo* out_info);
+MVM_EXPORT mvm_TeError mvm_bindNamedImport(mvm_VM* vm, mvm_HostFunctionID callID, uint8_t argumentCount, mvm_TfHostFunction handler);
+MVM_EXPORT mvm_TeError mvm_finalizeNamedImports(mvm_VM* vm);
+/** Resolve and call a named export, checking its fixed arity first. */
+MVM_EXPORT mvm_TeError mvm_callNamedExport(mvm_VM* vm, mvm_VMExportID exportID, mvm_Value* out_result, mvm_Value* args, uint8_t argCount);
 
 /**
  * Free all memory associated with a VM. The VM must not be used again after freeing.

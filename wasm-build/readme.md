@@ -8,11 +8,14 @@ npm run test:runtime-wasm
 ```
 
 The output is `wasm-build/build/microvium-runtime.wasm`. It imports a four-page
-WebAssembly memory and six functions from `env`: `mvm_wasm_host_import(id,
-number)`, `fmod(a, b)`, `pow(a, b)`, `fmodf(a, b)`, `powf(a, b)`, and
-`ldexp(value, exponent)`. The browser runtime wrapper supplies the math imports.
-The C runtime reserves one aligned 64kB page for VM RAM and one for snapshot
-bytes. Other memory holds the C globals and stack.
+WebAssembly memory and one function from `env`: `mvm_wasm_host_import(id,
+number)`. Math functions are linked into the module from Emscripten's libc, so
+the browser wrapper does not supply JavaScript math functions. The C runtime
+reserves one aligned 64kB page for VM RAM and one for snapshot bytes. Other
+memory holds the C globals and stack.
+
+The build needs Clang, LLD, and Emscripten. `CC`, `WASM_LD`, and `EMCC` select
+the respective tools.
 
 The browser-facing exports are:
 

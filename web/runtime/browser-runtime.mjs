@@ -9,12 +9,7 @@ export async function createBrowserRuntime(moduleBytes, hostImports) {
         const result = handler(argument);
         if (typeof result !== 'number') throw new TypeError(`Host import ${id} must return a number`);
         return result;
-      },
-      fmod: (a, b) => a % b,
-      pow: (a, b) => Math.pow(a, b),
-      fmodf: (a, b) => a % b,
-      powf: (a, b) => Math.pow(a, b),
-      ldexp: (value, exponent) => value * Math.pow(2, exponent)
+      }
     }
   });
 

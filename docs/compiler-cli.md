@@ -46,6 +46,7 @@ npm run test:compiler-wasm
 npm run build:web-demo
 ```
 
-`build:compiler-wasm` requires `emcc` on `PATH`; set `EMCC` to use a different
-compiler command. The vendored QuickJS-NG source is under
+`build:compiler-wasm` requires Clang on `PATH` to generate QuickJS bytecode and
+`emcc` to build the WebAssembly module. Set `HOST_CC` or `EMCC` to use
+different compiler commands. The vendored QuickJS-NG source is under
 [`wasm-build/quickjs-ng`](../wasm-build/quickjs-ng).

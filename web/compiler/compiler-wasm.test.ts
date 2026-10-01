@@ -19,6 +19,13 @@ function runCompiler(wasmPath: string, source: string) {
 }
 
 suite('compiler WebAssembly', () => {
+  test('has no runtime imports', function () {
+    const wasmPath = path.resolve('dist-web/compiler.wasm');
+    const wasm = (globalThis as any).WebAssembly;
+    const module = new wasm.Module(fs.readFileSync(wasmPath));
+    assert.deepEqual(wasm.Module.imports(module), []);
+  });
+
   test('reads source on stdin and writes a validated snapshot to stdout', function () {
     const wasmPath = path.resolve('dist-web/compiler.wasm');
     const snapshot = runCompiler(

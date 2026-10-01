@@ -16,7 +16,7 @@
   </head>
   <body>
     <h1>Microvium compiler and runtime in WebAssembly</h1>
-    <p>The compiler runs as a Javy WASI module. The C runtime restores its snapshot and calls export 1.</p>
+    <p>The compiler and C runtime run as standalone WebAssembly modules. The compiler has no filesystem or WASI imports.</p>
     <label for="source">Microvium source</label>
     <textarea id="source" spellcheck="false">const host = vmImport(1);
 vmExport(1, function (n) {

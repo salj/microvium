@@ -4,7 +4,7 @@ import test from 'node:test';
 import { BrowserCompiler } from '../compiler/browser-compiler.mjs';
 import { createBrowserRuntime } from '../runtime/browser-runtime.mjs';
 
-test('browser WASI compiler output restores and calls through the browser runtime wrapper', async () => {
+test('browser compiler output restores and calls through the browser runtime wrapper', async () => {
   const compilerBytes = await readFile('dist-web/compiler.wasm');
   const runtimeBytes = await readFile('wasm-build/build/microvium-runtime.wasm');
   const compiler = new BrowserCompiler(compilerBytes);

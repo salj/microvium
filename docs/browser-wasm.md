@@ -2,9 +2,11 @@
 
 The demo compiles Microvium source in the browser, restores the generated
 snapshot in the C runtime compiled to WebAssembly, then calls an exported
-function. Its sample also calls host import `1` from the Microvium program.
+function. The compiler module has no imports. The runtime module imports only
+WebAssembly memory and `mvm_wasm_host_import`; its math functions are linked
+into the module.
 
-## Tool versions
+## Requirements
 
 Install the versions selected by [`mise.toml`](../mise.toml):
 
@@ -12,24 +14,16 @@ Install the versions selected by [`mise.toml`](../mise.toml):
 mise install
 ```
 
-Mise selects Node `>=22.20.0, <22.21.0`, npm `>=10.9.0, <10.10.0`, and Python
-`>=3.14.0, <3.15.0`. These ranges are encoded as Node `22.20`, npm `10.9`, and
-Python `3.14` in the config. Python is needed by node-gyp to build the existing
-native addon during npm installation. The browser compiler does not use
-Python.
-
-The native WebAssembly runtime build also requires Clang and wasm-ld from an
-LLVM installation. The compiler WASM build downloads the pinned Javy 9.1.0
-host release on first use. The fetch script maps x86_64 and AArch64 Linux,
-macOS, and Windows hosts to the matching release asset and checks its SHA-256.
-Javy labels its AArch64 assets `arm`.
+The builds need Node.js, Clang, `wasm-ld`, and Emscripten (`emcc`). Python is
+needed by node-gyp when npm installs the native addon; neither WebAssembly
+build uses Python. Set `EMCC` if Emscripten is not on `PATH`.
 
 ## Build and run
 
 From a clean checkout:
 
 ```sh
-mise exec -- npm ci --lockfile-version=2
+mise exec -- npm ci
 mise exec -- npm run build:web-demo
 mise exec -- python -m http.server 8000 --directory dist-web
 ```
@@ -38,13 +32,17 @@ Open <http://127.0.0.1:8000/>. The generated files under `dist-web/` are
 ignored by Git. The sample should report that host import `1` received `7` and
 export `1` returned `28`.
 
+The compiler WASM embeds the JavaScript compiler in QuickJS-NG. Its source is
+vendored under [`wasm-build/quickjs-ng`](../wasm-build/quickjs-ng), so the
+compiler build does not fetch a runner or require a WASI host. The wrapper
+passes source and snapshots directly through the WebAssembly memory buffer.
+
 ## Verification
 
 ```sh
 mise exec -- npm run test:compiler-wasm
 mise exec -- npm run test:runtime-wasm
 mise exec -- npm run test:web-integration
-mise exec -- npm audit --audit-level=low
 ```
 
 The browser-independent integration test uses the same compiler and runtime
@@ -58,11 +56,6 @@ exported function and returns one numeric result. A host import also accepts
 one numeric argument and must return a number. The wrapper does not provide
 general object or string marshalling, nor does the browser compiler expose
 Microvium's debugger.
-
-The runtime module imports `mvm_wasm_host_import`, `fmod`, `pow`, `fmodf`,
-`powf`, and `ldexp` from `env`. The supplied browser wrapper implements the
-math imports with JavaScript numeric operations; applications using the WASM
-module directly must provide the same imports.
 
 The JavaScript and WebAssembly boundary transports binary64 numbers and does
 not preserve a Microvium numeric flavor. On input, the C glue calls

@@ -42,7 +42,11 @@ export async function runApp(args: CLIArgs, silent?: boolean, printHelp?: () => 
     opts.debugConfiguration = { port: 8080 };
   }
 
-  if (args.outputIL) opts.outputIL = true;
+  const writeDebugFile = (filename: string, contents: string) => fs.writeFileSync(filename, contents);
+  if (args.outputIL) {
+    opts.outputIL = true;
+    opts.writeDebugFile = writeDebugFile;
+  }
 
   const importTable: HostImportTable = { ...defaultHostEnvironment };
   const vm = Microvium.create(importTable, opts);
@@ -110,6 +114,7 @@ export async function runApp(args: CLIArgs, silent?: boolean, printHelp?: () => 
     if (args.outputIL) {
       snapshottingOpts.outputSnapshotIL = true;
       snapshottingOpts.snapshotILFilename = snapshotFilename + '.il';
+      snapshottingOpts.writeDebugFile = writeDebugFile;
     }
     if (args.outputSourceMap) {
       snapshottingOpts.generateSourceMap = true;

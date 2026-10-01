@@ -1,6 +1,4 @@
-import * as fs from 'fs';
 import * as im from 'immutable';
-import * as os from 'os';
 import * as _ from 'lodash';
 import { Microvium } from '../lib';
 
@@ -180,10 +178,6 @@ export function stringifyStringLiteral(s: string): string {
 
 export function isNameString(NameOperand: string): boolean {
   return /^[a-zA-Z_]+[a-zA-Z0-9_]*$/.test(NameOperand);
-}
-
-export function writeTextFile(filename: string, content: string) {
-  fs.writeFileSync(filename, content.replace(/\r?\n/g, os.EOL))
 }
 
 /** An array of the given length with no holes in it */

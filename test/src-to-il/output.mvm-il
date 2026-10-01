@@ -153,8 +153,7 @@ function ['#entry']() {
   block54:
     LoadVar(index 3);
     LoadVar(index 4);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 5);
     StoreVar(index 3);
     Pop(count 1);
@@ -369,8 +368,7 @@ function foo() {
   block26:
     LoadVar(index 7);
     LoadVar(index 8);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 9);
     StoreVar(index 7);
     Pop(count 1);
@@ -501,29 +499,25 @@ function foo() {
     Pop(count 1);
     LoadVar(index 0);
     LoadVar(index 7);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 8);
     StoreVar(index 0);
     Pop(count 1);
     Pop(count 1);
     LoadVar(index 0);
     LoadVar(index 7);
-    Literal(lit 1);
-    BinOp(op '-');
+    NumericUnOp(op '--', numeric type 'f64' (default context));
     LoadVar(index 8);
     StoreVar(index 0);
     Pop(count 1);
     Pop(count 1);
     LoadVar(index 0);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 7);
     StoreVar(index 0);
     Pop(count 1);
     LoadVar(index 0);
-    Literal(lit 1);
-    BinOp(op '-');
+    NumericUnOp(op '--', numeric type 'f64' (default context));
     LoadVar(index 7);
     StoreVar(index 0);
     Pop(count 1);

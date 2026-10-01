@@ -8,6 +8,7 @@ export function pass2_computeSlots({
   cur,
   importedModuleNamespaceSlots,
   importBindings,
+  namedImports,
   model,
   awaitStackDepths,
 }: AnalysisState) {
@@ -93,6 +94,21 @@ export function pass2_computeSlots({
 
     function computeImportBindingSlot(binding: Binding): Slot {
       const { source, specifier } = importBindings.get(binding) ?? unexpected();
+      const namedImport = namedImports.get(binding.name);
+      if (namedImport) {
+        const importedName = specifier.type === 'ImportSpecifier'
+          ? specifier.imported.type === 'Identifier' ? specifier.imported.name : specifier.imported.value
+          : undefined;
+        if (specifier.type !== 'ImportSpecifier' || source !== namedImport.moduleName || importedName !== namedImport.importName) {
+          return unexpected('Named FFI import binding does not match its declaration');
+        }
+        return {
+          type: 'NamedFFIImportSlot',
+          hostFunctionID: namedImport.hostFunctionID,
+          moduleName: namedImport.moduleName,
+          importName: namedImport.importName,
+        };
+      }
       const moduleNamespaceObjectSlot = getImportedModuleNamespaceSlot(source);
 
       switch (specifier.type) {

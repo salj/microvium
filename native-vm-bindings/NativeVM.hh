@@ -44,6 +44,7 @@ private:
   Napi::FunctionReference resolveImport;
   std::unique_ptr<Napi::Error> error;
   std::map<mvm_HostFunctionID, Napi::FunctionReference> importTable;
+  Napi::FunctionReference resolveNamedImport;
   // Pointer to result slot for currently-running host function (if any, otherwise NULL)
   mvm_Value* pResult;
   Napi::Env env;

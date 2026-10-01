@@ -32,7 +32,7 @@ suite('numeric-types snapshots', () => {
     const decoded = decodeSnapshot(snapshot);
     assert.equal(snapshot.data[2], 0);
     assert.equal(snapshot.data[3], 0);
-    assert.equal(snapshot.data.readUInt32LE(8) & (1 << 2), 0);
+    assert.equal(snapshot.data.readUInt16LE(8) & (1 << 2), 0);
     assert.equal(decoded.snapshotInfo.numericOptions.defaultFloatWidth, 64);
   });
 
@@ -40,7 +40,7 @@ suite('numeric-types snapshots', () => {
     const snapshot = compile('vmExport(1, 1.5);', 32);
     assert.equal(snapshot.data[2], 1);
     assert.equal(snapshot.data[3] & 1, 1);
-    assert.notEqual(snapshot.data.readUInt32LE(8) & (1 << 2), 0);
+    assert.notEqual(snapshot.data.readUInt16LE(8) & (1 << 2), 0);
   });
 
   test('explicit u12 uses a tagged Number allocation', () => {

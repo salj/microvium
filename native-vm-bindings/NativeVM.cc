@@ -1,6 +1,8 @@
 #include <map>
 #include <napi.h>
 #include <stdexcept>
+#include <string>
+#include <vector>
 #include "NativeVM.hh"
 #include "misc.hh"
 #include "error_descriptions.hh"
@@ -65,6 +67,11 @@ NativeVM::NativeVM(const Napi::CallbackInfo& info) :
       .ThrowAsJavaScriptException();
     return;
   }
+  if (info.Length() >= 3 && !info[2].IsUndefined() && !info[2].IsFunction()) {
+    Napi::TypeError::New(env, "Expected third argument to be a named import resolver")
+      .ThrowAsJavaScriptException();
+    return;
+  }
 
   Napi::Buffer<uint8_t> bytecodeBuffer = info[0].As<Napi::Buffer<uint8_t>>();
   size_t bytecodeLength = bytecodeBuffer.ByteLength();
@@ -72,9 +79,68 @@ NativeVM::NativeVM(const Napi::CallbackInfo& info) :
   memcpy(this->bytecode, bytecodeBuffer.Data(), bytecodeLength);
 
   this->resolveImport.Reset(info[1].As<Napi::Function>(), 1);
+  if (info.Length() >= 3 && info[2].IsFunction()) {
+    this->resolveNamedImport.Reset(info[2].As<Napi::Function>(), 1);
+  }
 
-  mvm_TeError err = mvm_restore(&this->vm, this->bytecode, bytecodeLength, this, NativeVM::resolveImportHandler);
+  mvm_TeError err = mvm_restoreNamed(&this->vm, this->bytecode, bytecodeLength, this, NativeVM::resolveImportHandler);
   if (err != MVM_E_SUCCESS) {
+    if (this->error) {
+      std::unique_ptr<Napi::Error> err(std::move(this->error));
+      err->ThrowAsJavaScriptException();
+      return;
+    }
+    throwVMError(env, err);
+    return;
+  }
+
+  uint16_t namedImportCount = 0;
+  err = mvm_getNamedImportCount(this->vm, &namedImportCount);
+  size_t scratchSize = 0;
+  if (err == MVM_E_SUCCESS) err = mvm_getNamedFFIScratchSize(this->vm, &scratchSize);
+  if (err != MVM_E_SUCCESS) {
+    mvm_free(this->vm);
+    this->vm = nullptr;
+    throwVMError(env, err);
+    return;
+  }
+
+  std::vector<uint8_t> scratch(scratchSize);
+  for (uint16_t i = 0; i < namedImportCount; i++) {
+    if (this->resolveNamedImport.IsEmpty()) break;
+    mvm_TsNamedImportInfo importInfo;
+    err = mvm_getNamedImport(this->vm, i, scratch.data(), scratch.size(), &importInfo);
+    if (err != MVM_E_SUCCESS) break;
+
+    try {
+      auto resolver = this->resolveNamedImport.Value();
+      auto resolved = resolver.Call(env.Global(), {
+        Napi::String::New(env, reinterpret_cast<const char*>(importInfo.moduleName), importInfo.moduleNameSize),
+        Napi::String::New(env, reinterpret_cast<const char*>(importInfo.importName), importInfo.importNameSize),
+        Napi::Number::New(env, importInfo.signature.argumentCount),
+      });
+      if (!resolved.IsFunction()) {
+        err = MVM_E_FFI_ABI_ERROR;
+        break;
+      }
+      this->importTable[importInfo.callID] = Napi::Persistent(resolved.As<Napi::Function>());
+      err = mvm_bindNamedImport(this->vm, importInfo.callID, importInfo.signature.argumentCount, &NativeVM::hostFunctionHandler);
+      if (err != MVM_E_SUCCESS) break;
+    }
+    catch (Napi::Error& e) {
+      this->error.reset(new Napi::Error(e));
+      break;
+    }
+    catch (...) {
+      err = MVM_E_HOST_ERROR;
+      break;
+    }
+  }
+
+  if (err == MVM_E_SUCCESS) err = mvm_finalizeNamedImports(this->vm);
+  if (err != MVM_E_SUCCESS) {
+    mvm_free(this->vm);
+    this->vm = nullptr;
     if (this->error) {
       std::unique_ptr<Napi::Error> err(std::move(this->error));
       err->ThrowAsJavaScriptException();
@@ -483,4 +549,3 @@ extern "C" void fatalError(void* vm_, int error) {
   NativeVM* self = (NativeVM*)mvm_getContext(vm);
   self->fatalError(error);
 }
-

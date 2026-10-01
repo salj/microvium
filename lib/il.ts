@@ -6,6 +6,7 @@ import { isUInt16, UInt8 } from './runtime-types';
 import { ModuleRelativeSource } from "./virtual-machine-types";
 import { opcodes, Opcode } from "./il-opcodes";
 import type { NumericType } from './numeric-types';
+import type { NamedExport, NamedImport } from './ffi';
 export type { NumericType } from './numeric-types';
 export { opcodes, Opcode, RegName } from "./il-opcodes";
 
@@ -37,6 +38,12 @@ export interface Unit {
   // imports ordered according to their appearance in the code. The variableName
   // will be undefined if the module is only imported for its side effects.
   moduleImports: Array<{ variableName?: ModuleVariableName, source: ModuleRelativeSource }>;
+
+  /** Named imports/exports used by the snapshot linker. */
+  namedImports?: NamedImport[];
+  namedExports?: NamedExport[];
+  /** Numeric IDs already explicitly declared with vmImport in source. */
+  reservedHostFunctionIDs?: number[];
 }
 
 export interface Function {
@@ -366,7 +373,7 @@ export interface StackDepthValue {
   variableDepth: number;
 }
 
-export type LiteralValueType = boolean | number | string | undefined | null;
+export type LiteralValueType = boolean | number | string | undefined | null | HostFunctionValue;
 
 export type BinOpCode =
   |  "+"

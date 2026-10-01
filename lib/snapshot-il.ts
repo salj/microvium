@@ -3,10 +3,18 @@ import * as IL from './il';
 import { entriesInOrder, stringifyIdentifier } from './utils';
 import { stringifyValue, stringifyFunction, stringifyAllocation, StringifyILOpts } from './stringify-il';
 import { crc16ccitt } from 'crc';
+import { NamedExport, NamedImport } from './ffi';
 
-export const ENGINE_MAJOR_VERSION = 8  /* aka MVM_BYTECODE_VERSION */;
+export const ENGINE_MAJOR_VERSION = 9  /* aka MVM_BYTECODE_VERSION */;
 export const HEADER_SIZE = 28;
+export const LEGACY_ENGINE_MAJOR_VERSION = 8;
+export const LEGACY_HEADER_SIZE = 28;
 export const ENGINE_MINOR_VERSION = 1  /* aka MVM_ENGINE_VERSION */;
+
+export interface SnapshotReadOptions {
+  /** Permit reading v8.1 snapshots when the native runtime is built with the same support. */
+  supportLegacyBytecode?: boolean;
+}
 
 /**
  * A snapshot represents the state of the machine captured at a specific moment
@@ -20,6 +28,9 @@ export interface SnapshotIL {
   globalSlots: Map<VM.GlobalSlotID, VM.GlobalSlot>;
   functions: Map<IL.FunctionID, IL.Function>;
   exports: Map<IL.ExportID, IL.Value>;
+  /** Optional name/signature surface associated with numeric call slots. */
+  namedImports?: NamedImport[];
+  namedExports?: NamedExport[];
   allocations: Map<IL.AllocationID, IL.Allocation>;
   flags: Set<IL.ExecutionFlag>;
   numericOptions: NumericOptions;
@@ -60,12 +71,19 @@ function stringifyAllocationRegion(region: IL.AllocationBase['memoryRegion']): s
   return !region || region === 'gc' ? '' : region + ' ';
 }
 
-export function validateSnapshotBinary(bytecode: Buffer): { err: string } | undefined {
+export function validateSnapshotBinary(bytecode: Buffer, options: SnapshotReadOptions = {}): { err: string } | undefined {
+  const actualBytecodeVersion = bytecode.length > 0 ? bytecode.readUInt8(0) : -1;
+  const isLegacyBytecode = actualBytecodeVersion === LEGACY_ENGINE_MAJOR_VERSION;
+  if (isLegacyBytecode && !options.supportLegacyBytecode) {
+    return { err: `Legacy bytecode version ${LEGACY_ENGINE_MAJOR_VERSION} is disabled` };
+  }
+
+  const expectedHeaderSize = isLegacyBytecode ? LEGACY_HEADER_SIZE : HEADER_SIZE;
   // The first 8 bytes include the integrity metadata
-  if (bytecode.length < HEADER_SIZE) return { err: 'Too short' };
+  if (bytecode.length < expectedHeaderSize) return { err: 'Too short' };
 
   const headerSize = bytecode.readUInt8(1);
-  if (headerSize != HEADER_SIZE)
+  if (headerSize != expectedHeaderSize)
     return { err: `Header size mismatch` };
 
   const bytecodeSize = bytecode.readUInt16LE(4);
@@ -77,14 +95,17 @@ export function validateSnapshotBinary(bytecode: Buffer): { err: string } | unde
   if (calculatedCrc !== recordedCrc)
     return { err: `CRC fail` };
 
-  const actualBytecodeVersion = bytecode.readUInt8(0);
-  if (actualBytecodeVersion !== ENGINE_MAJOR_VERSION) {
+  if (!isLegacyBytecode && actualBytecodeVersion !== ENGINE_MAJOR_VERSION) {
     return { err: `Supported bytecode version is ${ENGINE_MAJOR_VERSION} but file is version ${actualBytecodeVersion}` };
   }
 
   const requiredEngineVersion = bytecode.readUInt8(2);
+  if (isLegacyBytecode) {
+    if (requiredEngineVersion > 1) return { err: `Legacy engine version ${requiredEngineVersion} is not supported` };
+    return undefined;
+  }
   const numericOptions = bytecode.readUInt8(3);
-  const requiredFeatureFlags = bytecode.readUInt32LE(8);
+  const requiredFeatureFlags = bytecode.readUInt16LE(8);
   const usesNumericTypes = (requiredFeatureFlags & (1 << IL.ExecutionFlag.NumericTypes)) !== 0;
   if (requiredEngineVersion > ENGINE_MINOR_VERSION) {
     return { err: `Engine version ${requiredEngineVersion} requires a later engine (implemented ${ENGINE_MINOR_VERSION})` };

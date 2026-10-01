@@ -4,7 +4,7 @@ import * as microvium from '../../lib';
 import _ from 'lodash';
 import path from 'path';
 import shelljs from 'shelljs';
-import { writeTextFile } from "../../lib/utils";
+import { writeTextFile } from "../../lib/node-io";
 import colors from 'colors';
 
 const artifactDir = './test/getting-started/code';
@@ -85,7 +85,7 @@ suite('getting-started', function () {
 
   test('3.script.mvm.js', () => {
     const result = runMicroviumCLI('script.mvm.js');
-    assert.deepEqual(result.stderr.trim(), 'Output generated: script.mvm-bc\n116 bytes');
+    assert.deepEqual(result.stderr.trim(), 'Output generated: script.mvm-bc\n124 bytes');
     assert.deepEqual(result.stdout.trim(), '');
   });
 

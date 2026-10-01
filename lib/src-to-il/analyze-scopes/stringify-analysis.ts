@@ -182,6 +182,7 @@ function renderSlotReference(slot: Slot | SlotAccessInfo) {
     case 'ArgumentSlot': return inline`arg[${slot.argIndex}]`;
     case 'GlobalSlot': return inline`global[${slot.name}]`;
     case 'ModuleImportExportSlot': return inline`importExport[${renderKey(slot.moduleNamespaceObjectSlot.name)}.${renderKey(slot.propertyName)}]`;
+    case 'NamedFFIImportSlot': return inline`ffiImport[${slot.hostFunctionID}:${renderKey(slot.moduleName)}.${renderKey(slot.importName)}]`;
     case 'ConstUndefinedAccess': return inline`literal[undefined]`;
     default: return assertUnreachable(slot);
   }
@@ -272,6 +273,7 @@ function renderSlot(slot?: Slot): Stringifiable {
     case 'GlobalSlot': return inline`[global slot] ${slot.name}`;
     case 'LocalSlot': return inline`[local slot] ${slot.index}`;
     case 'ModuleImportExportSlot': return inline`[import/export slot] ${slot.propertyName} [in] ${renderSlot(slot.moduleNamespaceObjectSlot)}`;
+    case 'NamedFFIImportSlot': return inline`[named FFI import] ${slot.moduleName}:${slot.importName} [id] ${slot.hostFunctionID}`;
     default: return assertUnreachable(slot);
   }
 }

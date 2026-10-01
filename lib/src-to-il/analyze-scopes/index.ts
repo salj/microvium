@@ -5,6 +5,7 @@ import { AnalysisState } from './analysis-state';
 import { pass1_findScopesAndBindings } from './pass-1-find-scopes-and-bindings';
 import { pass2_computeSlots } from './pass-2-compute-slots';
 import { pass3_computeSlotAccessors } from './pass-3-compute-accessors';
+import type { NamedImport } from '../../ffi';
 
 export * from './analysis-model';
 
@@ -20,7 +21,12 @@ In some ways, this basically returns a declarative representation of how all the
 variables declarations and references must be emitted (including things like
 parameters and function declarations).
 */
-export function analyzeScopes(file: B.File, filename: string, awaitStackDepths?: Map<string, number>): AnalysisModel {
+export function analyzeScopes(
+  file: B.File,
+  filename: string,
+  awaitStackDepths?: Map<string, number>,
+  namedImports: Map<string, NamedImport> = new Map(),
+): AnalysisModel {
   /*
   This function works in 3 passes with a "blackboard" design pattern. Each pass
   populates or uses information from the `analysisState` model which contains
@@ -31,6 +37,7 @@ export function analyzeScopes(file: B.File, filename: string, awaitStackDepths?:
     file,
     cur: { filename, node: file },
     importBindings: new Map<Binding, { source: string, specifier: B.ImportSpecifier }>(),
+    namedImports,
     importedModuleNamespaceSlots: new Map<string, GlobalSlot>(), // Populated in pass2_computeSlots
     awaitStackDepths: awaitStackDepths,
     model: {

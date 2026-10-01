@@ -2919,6 +2919,13 @@ SUB_CALL_HOST_COMMON: {
   VM_ASSERT(vm, reg2 < vm_getResolvedImportCount(vm));
   mvm_TfHostFunction hostFunction = vm_getResolvedImports(vm)[reg2];
   mvm_HostFunctionID hostFunctionID = vm_getHostFunctionId(vm, reg2);
+  uint16_t expectedNamedArgCount = vm_getNamedImportArities(vm)[reg2];
+  if (expectedNamedArgCount != 0xFFFFu && reg3 != expectedNamedArgCount) {
+    // This is an ABI failure from a host binding, not a script exception. Keep
+    // it on the normal error-return path even when MVM_ALL_ERRORS_FATAL is set.
+    err = MVM_E_FFI_ABI_ERROR;
+    goto SUB_EXIT;
+  }
 
   FLUSH_REGISTER_CACHE();
 
@@ -3433,7 +3440,15 @@ static bool Value_encodesBytecodeMappedPtr(Value value) {
 
 static inline uint16_t getSectionOffset(LongPtr lpBytecode, mvm_TeBytecodeSection section) {
   CODE_COVERAGE(38); // Hit
-  LongPtr lpSection = LongPtr_add(lpBytecode, OFFSETOF(mvm_TsBytecodeHeader, sectionOffsets) + section * 2);
+  // v8.1 had no FFI section and used a 32-bit feature mask.
+  uint8_t sectionIndex = (uint8_t)section;
+  uint8_t sectionTableOffset = (uint8_t)OFFSETOF(mvm_TsBytecodeHeader, sectionOffsets);
+  if (LongPtr_read1(lpBytecode) == 8) {
+    sectionTableOffset = 12;
+    if (section == BCS_FFI_TABLE || section == BCS_GLOBALS) sectionIndex = (uint8_t)BCS_GLOBALS - 1;
+    else if (section >= BCS_SHORT_CALL_TABLE) sectionIndex--;
+  }
+  LongPtr lpSection = LongPtr_add(lpBytecode, sectionTableOffset + sectionIndex * 2);
   uint16_t offset = LongPtr_read2_aligned(lpSection);
   return offset;
 }
@@ -3477,9 +3492,115 @@ static bool DynamicPtr_isRomPtr(VM* vm, DynamicPtr dp) {
 }
 #endif // MVM_SAFE_MODE
 
+static mvm_TeError vm_unboundNamedImportHandler(mvm_VM* vm, mvm_HostFunctionID hostFunctionID, mvm_Value* result, mvm_Value* args, uint8_t argCount) {
+  (void)vm;
+  (void)hostFunctionID;
+  (void)result;
+  (void)args;
+  (void)argCount;
+  return MVM_E_UNRESOLVED_IMPORT;
+}
+
+typedef struct vm_TsNamedRestoreContext {
+  LongPtr snapshotBytecode;
+  size_t bytecodeSize;
+  void* numericContext;
+  mvm_TfResolveImport resolveNumericImport;
+} vm_TsNamedRestoreContext;
+
+static bool vm_snapshotReadU16(LongPtr* cursor, uint16_t* remaining, uint16_t* out_value) {
+  if (*remaining < 2) return false;
+  *out_value = LongPtr_read2_unaligned(*cursor);
+  *cursor = LongPtr_add(*cursor, 2);
+  *remaining -= 2;
+  return true;
+}
+
+/** Locate a named call ID before mvm_restore resolves the import table. */
+static mvm_TeError vm_snapshotHasNamedImport(
+  LongPtr snapshotBytecode,
+  size_t bytecodeSize,
+  mvm_HostFunctionID callID,
+  bool* out_isNamed
+) {
+  *out_isNamed = false;
+  if (LongPtr_read1(snapshotBytecode) != MVM_ENGINE_MAJOR_VERSION) return MVM_E_SUCCESS;
+  if (bytecodeSize < sizeof(mvm_TsBytecodeHeader) || LongPtr_read1(LongPtr_add(snapshotBytecode, 1)) != sizeof(mvm_TsBytecodeHeader)) {
+    return MVM_E_INVALID_BYTECODE;
+  }
+
+  LongPtr offsets = LongPtr_add(snapshotBytecode, OFFSETOF(mvm_TsBytecodeHeader, sectionOffsets));
+  uint16_t sectionStart = LongPtr_read2_unaligned(LongPtr_add(offsets, BCS_FFI_TABLE * 2));
+  uint16_t sectionEnd = LongPtr_read2_unaligned(LongPtr_add(offsets, BCS_GLOBALS * 2));
+  if (sectionStart < sizeof(mvm_TsBytecodeHeader) || sectionEnd < sectionStart || sectionEnd > bytecodeSize) return MVM_E_INVALID_BYTECODE;
+  if (sectionStart == sectionEnd) return MVM_E_SUCCESS;
+
+  LongPtr cursor = LongPtr_add(snapshotBytecode, sectionStart);
+  uint16_t remaining = sectionEnd - sectionStart;
+  uint16_t symbolCount, signatureCount, importCount, exportCount;
+  if (!vm_snapshotReadU16(&cursor, &remaining, &symbolCount) ||
+      !vm_snapshotReadU16(&cursor, &remaining, &signatureCount) ||
+      !vm_snapshotReadU16(&cursor, &remaining, &importCount) ||
+      !vm_snapshotReadU16(&cursor, &remaining, &exportCount)) return MVM_E_INVALID_BYTECODE;
+
+  uint32_t decodedSymbolSize = 0;
+  for (uint16_t i = 0; i < symbolCount; i++) {
+    uint16_t backrefStart, backrefLength, tailLength;
+    if (!vm_snapshotReadU16(&cursor, &remaining, &backrefStart) ||
+        !vm_snapshotReadU16(&cursor, &remaining, &backrefLength) ||
+        !vm_snapshotReadU16(&cursor, &remaining, &tailLength) ||
+        (uint32_t)backrefStart + backrefLength > decodedSymbolSize ||
+        decodedSymbolSize + backrefLength + tailLength > 0xFFFFu ||
+        (backrefLength == 0 && backrefStart != 0) || tailLength > remaining) return MVM_E_INVALID_BYTECODE;
+    cursor = LongPtr_add(cursor, tailLength);
+    remaining -= tailLength;
+    decodedSymbolSize += backrefLength + tailLength;
+  }
+
+  for (uint16_t i = 0; i < signatureCount; i++) {
+    uint16_t signatureSize;
+    if (!vm_snapshotReadU16(&cursor, &remaining, &signatureSize) || signatureSize < 2 || signatureSize > remaining) return MVM_E_INVALID_BYTECODE;
+    cursor = LongPtr_add(cursor, signatureSize);
+    remaining -= signatureSize;
+  }
+
+  if ((uint32_t)importCount * 8u + (uint32_t)exportCount * 6u > remaining) return MVM_E_INVALID_BYTECODE;
+  for (uint16_t i = 0; i < importCount; i++) {
+    uint16_t id, moduleIndex, nameIndex, signatureIndex;
+    if (!vm_snapshotReadU16(&cursor, &remaining, &id) ||
+        !vm_snapshotReadU16(&cursor, &remaining, &moduleIndex) ||
+        !vm_snapshotReadU16(&cursor, &remaining, &nameIndex) ||
+        !vm_snapshotReadU16(&cursor, &remaining, &signatureIndex) ||
+        moduleIndex >= symbolCount || nameIndex >= symbolCount || signatureIndex >= signatureCount) return MVM_E_INVALID_BYTECODE;
+    if (id == callID) *out_isNamed = true;
+  }
+  return MVM_E_SUCCESS;
+}
+
+static mvm_TeError vm_resolveNamedRestoreImport(
+  mvm_HostFunctionID hostFunctionID,
+  void* context,
+  mvm_TfHostFunction* out_hostFunction
+) {
+  vm_TsNamedRestoreContext* restoreContext = (vm_TsNamedRestoreContext*)context;
+  bool isNamed;
+  mvm_TeError error = vm_snapshotHasNamedImport(restoreContext->snapshotBytecode, restoreContext->bytecodeSize, hostFunctionID, &isNamed);
+  if (error != MVM_E_SUCCESS) return error;
+  if (isNamed) {
+    *out_hostFunction = &vm_unboundNamedImportHandler;
+    return MVM_E_SUCCESS;
+  }
+  if (!restoreContext->resolveNumericImport) {
+    *out_hostFunction = NULL;
+    return MVM_E_UNRESOLVED_IMPORT;
+  }
+  return restoreContext->resolveNumericImport(hostFunctionID, restoreContext->numericContext, out_hostFunction);
+}
+
 TeError mvm_restore(mvm_VM** result, MVM_LONG_PTR_TYPE lpBytecode, size_t bytecodeSize_, void* context, mvm_TfResolveImport resolveImport) {
   // Note: these are declared here because some compilers give warnings when "goto" bypasses some variable declarations
   mvm_TfHostFunction* resolvedImports;
+  uint16_t* namedImportArities;
   uint16_t importTableOffset;
   LongPtr lpImportTableStart;
   LongPtr lpImportTableEnd;
@@ -3487,6 +3608,9 @@ TeError mvm_restore(mvm_VM** result, MVM_LONG_PTR_TYPE lpBytecode, size_t byteco
   LongPtr lpImportTableEntry;
   uint16_t initialHeapOffset;
   uint16_t initialHeapSize;
+  bool isLegacyBytecode;
+  uint8_t globalsSectionIndex;
+  uint8_t heapSectionIndex;
 
   CODE_COVERAGE(3); // Hit
 
@@ -3504,13 +3628,50 @@ TeError mvm_restore(mvm_VM** result, MVM_LONG_PTR_TYPE lpBytecode, size_t byteco
   TeError err = MVM_E_SUCCESS;
   VM* vm = NULL;
 
-  // Bytecode size field is located at the second word
-  if (bytecodeSize_ < sizeof (mvm_TsBytecodeHeader)) {
+  // Bytecode size field is located at the second word. v8.1 had an 8-entry
+  // section table (28-byte header); current snapshots have 9 entries.
+  if (bytecodeSize_ < 8) {
     CODE_COVERAGE_ERROR_PATH(21); // Not hit
     return MVM_E_INVALID_BYTECODE;
   }
   mvm_TsBytecodeHeader header;
-  memcpy_long(&header, lpBytecode, sizeof header);
+  memset(&header, 0, sizeof header);
+  uint8_t bytecodeVersion = LongPtr_read1(lpBytecode);
+  uint8_t headerSize = LongPtr_read1(LongPtr_add(lpBytecode, 1));
+  isLegacyBytecode = bytecodeVersion == 8;
+  if (isLegacyBytecode) {
+    if (!MVM_SUPPORT_LEGACY_BYTECODE || headerSize != 28 || bytecodeSize_ < 28) return MVM_E_WRONG_BYTECODE_VERSION;
+    header.bytecodeVersion = bytecodeVersion;
+    header.headerSize = headerSize;
+    header.requiredEngineVersion = LongPtr_read1(LongPtr_add(lpBytecode, 2));
+    header.numericOptions = LongPtr_read1(LongPtr_add(lpBytecode, 3));
+    header.bytecodeSize = LongPtr_read2_unaligned(LongPtr_add(lpBytecode, 4));
+    header.crc = LongPtr_read2_unaligned(LongPtr_add(lpBytecode, 6));
+    uint32_t legacyFeatureFlags = (uint32_t)LongPtr_read2_unaligned(LongPtr_add(lpBytecode, 8)) |
+      ((uint32_t)LongPtr_read2_unaligned(LongPtr_add(lpBytecode, 10)) << 16);
+    if (legacyFeatureFlags > 0xFFFFu) return MVM_E_INVALID_BYTECODE;
+    header.requiredFeatureFlags = (uint16_t)legacyFeatureFlags;
+    uint16_t legacyOffsets[8];
+    for (uint8_t i = 0; i < 8; i++) {
+      legacyOffsets[i] = LongPtr_read2_unaligned(LongPtr_add(lpBytecode, 12 + i * 2));
+    }
+    header.sectionOffsets[BCS_IMPORT_TABLE] = legacyOffsets[0];
+    header.sectionOffsets[BCS_EXPORT_TABLE] = legacyOffsets[1];
+    header.sectionOffsets[BCS_FFI_TABLE] = legacyOffsets[6];
+    header.sectionOffsets[BCS_SHORT_CALL_TABLE] = legacyOffsets[2];
+    header.sectionOffsets[BCS_BUILTINS] = legacyOffsets[3];
+    header.sectionOffsets[BCS_STRING_TABLE] = legacyOffsets[4];
+    header.sectionOffsets[BCS_ROM] = legacyOffsets[5];
+    header.sectionOffsets[BCS_GLOBALS] = legacyOffsets[6];
+    header.sectionOffsets[BCS_HEAP] = legacyOffsets[7];
+    globalsSectionIndex = (uint8_t)BCS_GLOBALS;
+    heapSectionIndex = (uint8_t)BCS_HEAP;
+  } else {
+    if (headerSize != sizeof (mvm_TsBytecodeHeader) || bytecodeSize_ < sizeof (mvm_TsBytecodeHeader)) return MVM_E_INVALID_BYTECODE;
+    memcpy_long(&header, lpBytecode, sizeof header);
+    globalsSectionIndex = (uint8_t)BCS_GLOBALS;
+    heapSectionIndex = (uint8_t)BCS_HEAP;
+  }
 
   // Note: the restore function takes an explicit bytecode size because there
   // may be a size inherent to the medium from which the bytecode image comes,
@@ -3534,12 +3695,12 @@ TeError mvm_restore(mvm_VM** result, MVM_LONG_PTR_TYPE lpBytecode, size_t byteco
     return MVM_E_INVALID_BYTECODE;
   }
 
-  if (header.bytecodeVersion != MVM_ENGINE_MAJOR_VERSION) {
+  if (header.bytecodeVersion != MVM_ENGINE_MAJOR_VERSION && !isLegacyBytecode) {
     CODE_COVERAGE_ERROR_PATH(430); // Not hit
     return MVM_E_WRONG_BYTECODE_VERSION;
   }
 
-  if (MVM_ENGINE_MINOR_VERSION < header.requiredEngineVersion) {
+  if (!isLegacyBytecode && MVM_ENGINE_MINOR_VERSION < header.requiredEngineVersion) {
     CODE_COVERAGE_ERROR_PATH(247); // Not hit
     return MVM_E_REQUIRES_LATER_ENGINE;
   }
@@ -3560,13 +3721,14 @@ TeError mvm_restore(mvm_VM** result, MVM_LONG_PTR_TYPE lpBytecode, size_t byteco
   err = vm_validatePortFileMacros(lpBytecode, &header, context);
   if (err) return err;
 
-  uint16_t importTableSize = header.sectionOffsets[vm_sectionAfter(vm, BCS_IMPORT_TABLE)] - header.sectionOffsets[BCS_IMPORT_TABLE];
+  uint16_t importTableSize = header.sectionOffsets[BCS_EXPORT_TABLE] - header.sectionOffsets[BCS_IMPORT_TABLE];
   uint16_t importCount = importTableSize / sizeof (vm_TsImportTableEntry);
 
-  uint16_t globalsSize = header.sectionOffsets[vm_sectionAfter(vm, BCS_GLOBALS)] - header.sectionOffsets[BCS_GLOBALS];
+  uint16_t globalsSize = header.sectionOffsets[heapSectionIndex] - header.sectionOffsets[globalsSectionIndex];
 
   size_t allocationSize = sizeof(mvm_VM) +
     sizeof(mvm_TfHostFunction) * importCount +  // Import table
+    sizeof(uint16_t) * importCount + // Named-import arities
     globalsSize; // Globals
   vm = (VM*)MVM_CONTEXTUAL_MALLOC(allocationSize, context);
   if (!vm) {
@@ -3581,7 +3743,9 @@ TeError mvm_restore(mvm_VM** result, MVM_LONG_PTR_TYPE lpBytecode, size_t byteco
   resolvedImports = vm_getResolvedImports(vm);
   vm->context = context;
   vm->lpBytecode = lpBytecode;
-  vm->globals = (void*)(resolvedImports + importCount);
+  namedImportArities = vm_getNamedImportArities(vm);
+  for (uint16_t i = 0; i < importCount; i++) namedImportArities[i] = 0xFFFFu;
+  vm->globals = namedImportArities + importCount;
   vm->numericTypes = numericTypes;
   vm->defaultFloatWidth = (header.numericOptions & MVM_NUMERIC_OPTION_DEFAULT_F32) ? 32 : 64;
   #ifdef MVM_GAS_COUNTER
@@ -3599,6 +3763,15 @@ TeError mvm_restore(mvm_VM** result, MVM_LONG_PTR_TYPE lpBytecode, size_t byteco
     mvm_HostFunctionID hostFunctionID = READ_FIELD_2(lpImportTableEntry, vm_TsImportTableEntry, hostFunctionID);
     lpImportTableEntry = LongPtr_add(lpImportTableEntry, sizeof (vm_TsImportTableEntry));
     mvm_TfHostFunction handler = NULL;
+    if (resolveImport != &vm_resolveNamedRestoreImport) {
+      bool isNamedImport;
+      err = vm_snapshotHasNamedImport(lpBytecode, bytecodeSize, hostFunctionID, &isNamedImport);
+      if (err != MVM_E_SUCCESS) goto SUB_EXIT;
+      if (isNamedImport) {
+        err = MVM_E_FFI_ABI_ERROR;
+        goto SUB_EXIT;
+      }
+    }
     err = resolveImport(hostFunctionID, context, &handler);
     if (err != MVM_E_SUCCESS) {
       CODE_COVERAGE_ERROR_PATH(432); // Not hit
@@ -3621,7 +3794,7 @@ TeError mvm_restore(mvm_VM** result, MVM_LONG_PTR_TYPE lpBytecode, size_t byteco
   memcpy_long(vm->globals, getBytecodeSection(vm, BCS_GLOBALS, NULL), globalsSize);
 
   // Initialize heap
-  initialHeapOffset = header.sectionOffsets[BCS_HEAP];
+  initialHeapOffset = header.sectionOffsets[heapSectionIndex];
   initialHeapSize = bytecodeSize - initialHeapOffset;
   vm->heapSizeUsedAfterLastGC = initialHeapSize;
   vm->heapHighWaterMark = initialHeapSize;
@@ -3680,6 +3853,23 @@ SUB_EXIT:
   return err;
 }
 
+mvm_TeError mvm_restoreNamed(
+  mvm_VM** result,
+  MVM_LONG_PTR_TYPE snapshotBytecode,
+  size_t bytecodeSize,
+  void* context,
+  mvm_TfResolveImport resolveImport
+) {
+  vm_TsNamedRestoreContext restoreContext;
+  restoreContext.snapshotBytecode = MVM_LONG_PTR_NEW(snapshotBytecode);
+  restoreContext.bytecodeSize = bytecodeSize;
+  restoreContext.numericContext = context;
+  restoreContext.resolveNumericImport = resolveImport;
+  mvm_TeError error = mvm_restore(result, snapshotBytecode, bytecodeSize, &restoreContext, &vm_resolveNamedRestoreImport);
+  if (error == MVM_E_SUCCESS && result && *result) (*result)->context = context;
+  return error;
+}
+
 static inline uint16_t getBytecodeSize(VM* vm) {
   CODE_COVERAGE_UNTESTED(168); // Not hit
   LongPtr lpBytecodeSize = LongPtr_add(vm->lpBytecode, OFFSETOF(mvm_TsBytecodeHeader, bytecodeSize));
@@ -3689,9 +3879,7 @@ static inline uint16_t getBytecodeSize(VM* vm) {
 static LongPtr getBytecodeSection(VM* vm, mvm_TeBytecodeSection id, LongPtr* out_end) {
   CODE_COVERAGE(170); // Hit
   LongPtr lpBytecode = vm->lpBytecode;
-  LongPtr lpSections = LongPtr_add(lpBytecode, OFFSETOF(mvm_TsBytecodeHeader, sectionOffsets));
-  LongPtr lpSection = LongPtr_add(lpSections, id * 2);
-  uint16_t offset = LongPtr_read2_aligned(lpSection);
+  uint16_t offset = getSectionOffset(lpBytecode, id);
   LongPtr result = LongPtr_add(lpBytecode, offset);
   if (out_end) {
     CODE_COVERAGE(171); // Hit
@@ -3699,8 +3887,7 @@ static LongPtr getBytecodeSection(VM* vm, mvm_TeBytecodeSection id, LongPtr* out
     if (id == BCS_SECTION_COUNT - 1) {
       endOffset = getBytecodeSize(vm);
     } else {
-      LongPtr lpNextSection = LongPtr_add(lpSection, 2);
-      endOffset = LongPtr_read2_aligned(lpNextSection);
+      endOffset = getSectionOffset(lpBytecode, vm_sectionAfter(vm, id));
     }
     *out_end = LongPtr_add(lpBytecode, endOffset);
   } else {
@@ -3713,6 +3900,7 @@ static uint16_t getSectionSize(VM* vm, mvm_TeBytecodeSection section) {
   CODE_COVERAGE(174); // Hit
   uint16_t sectionStart = getSectionOffset(vm->lpBytecode, section);
   uint16_t sectionEnd;
+  if (LongPtr_read1(vm->lpBytecode) == 8 && section == BCS_FFI_TABLE) return 0;
   if (section == BCS_SECTION_COUNT - 1) {
     CODE_COVERAGE_UNTESTED(175); // Not hit
     sectionEnd = getBytecodeSize(vm);
@@ -3723,6 +3911,512 @@ static uint16_t getSectionSize(VM* vm, mvm_TeBytecodeSection section) {
   }
   VM_ASSERT(vm, sectionEnd >= sectionStart);
   return sectionEnd - sectionStart;
+}
+
+typedef struct vm_TsFFITableHeader {
+  uint16_t symbolCount;
+  uint16_t signatureCount;
+  uint16_t importCount;
+  uint16_t exportCount;
+} vm_TsFFITableHeader;
+
+static bool vm_ffiReadU8(LongPtr* cursor, uint16_t* remaining, uint8_t* out_value) {
+  if (*remaining < 1) return false;
+  *out_value = LongPtr_read1(*cursor);
+  *cursor = LongPtr_add(*cursor, 1);
+  (*remaining)--;
+  return true;
+}
+
+static bool vm_ffiReadU16(LongPtr* cursor, uint16_t* remaining, uint16_t* out_value) {
+  if (*remaining < 2) return false;
+  *out_value = LongPtr_read2_unaligned(*cursor);
+  *cursor = LongPtr_add(*cursor, 2);
+  *remaining -= 2;
+  return true;
+}
+
+static bool vm_ffiSkip(LongPtr* cursor, uint16_t* remaining, uint16_t count) {
+  if (count > *remaining) return false;
+  uint16_t skipCount = count;
+  while (count) {
+    *cursor = LongPtr_add(*cursor, 1);
+    count--;
+  }
+  *remaining -= skipCount;
+  return true;
+}
+
+static mvm_TeError vm_ffiGetSection(VM* vm, LongPtr* out_base, uint16_t* out_size, vm_TsFFITableHeader* out_header) {
+  if (!vm || !out_base || !out_size || !out_header) return MVM_E_INVALID_ARGUMENTS;
+  if (LongPtr_read1(vm->lpBytecode) == 8) {
+    memset(out_header, 0, sizeof(*out_header));
+    *out_base = getBytecodeSection(vm, BCS_FFI_TABLE, NULL);
+    *out_size = 0;
+    return MVM_E_SUCCESS;
+  }
+  uint16_t size = getSectionSize(vm, BCS_FFI_TABLE);
+  if (size == 0) {
+    memset(out_header, 0, sizeof(*out_header));
+    *out_base = getBytecodeSection(vm, BCS_FFI_TABLE, NULL);
+    *out_size = 0;
+    return MVM_E_SUCCESS;
+  }
+  if (size < 8) return MVM_E_INVALID_BYTECODE;
+  LongPtr base = getBytecodeSection(vm, BCS_FFI_TABLE, NULL);
+  LongPtr cursor = base;
+  uint16_t remaining = size;
+  if (!vm_ffiReadU16(&cursor, &remaining, &out_header->symbolCount) ||
+      !vm_ffiReadU16(&cursor, &remaining, &out_header->signatureCount) ||
+      !vm_ffiReadU16(&cursor, &remaining, &out_header->importCount) ||
+      !vm_ffiReadU16(&cursor, &remaining, &out_header->exportCount)) {
+    return MVM_E_INVALID_BYTECODE;
+  }
+  *out_base = base;
+  *out_size = size;
+  return MVM_E_SUCCESS;
+}
+
+static mvm_TeError vm_ffiSkipSymbols(LongPtr* cursor, uint16_t* remaining, const vm_TsFFITableHeader* header, uint32_t* out_decodedSize) {
+  uint32_t decodedSize = 0;
+  for (uint16_t i = 0; i < header->symbolCount; i++) {
+    uint16_t backrefStart, backrefLength, tailLength;
+    if (!vm_ffiReadU16(cursor, remaining, &backrefStart) ||
+        !vm_ffiReadU16(cursor, remaining, &backrefLength) ||
+        !vm_ffiReadU16(cursor, remaining, &tailLength) ||
+        (uint32_t)backrefStart + backrefLength > decodedSize ||
+        decodedSize + backrefLength + tailLength > 0xFFFFu ||
+        !vm_ffiSkip(cursor, remaining, tailLength)) {
+      return MVM_E_INVALID_BYTECODE;
+    }
+    if (backrefLength == 0 && backrefStart != 0) return MVM_E_INVALID_BYTECODE;
+    decodedSize += backrefLength + tailLength;
+  }
+  if (out_decodedSize) *out_decodedSize = decodedSize;
+  return MVM_E_SUCCESS;
+}
+
+static mvm_TeError vm_ffiSkipSignatures(LongPtr* cursor, uint16_t* remaining, const vm_TsFFITableHeader* header) {
+  for (uint16_t i = 0; i < header->signatureCount; i++) {
+    uint16_t recordSize;
+    if (!vm_ffiReadU16(cursor, remaining, &recordSize) || recordSize < 2 || !vm_ffiSkip(cursor, remaining, recordSize)) {
+      return MVM_E_INVALID_BYTECODE;
+    }
+  }
+  return MVM_E_SUCCESS;
+}
+
+static mvm_TeError vm_ffiReadSignature(
+  LongPtr cursor,
+  uint16_t remaining,
+  const vm_TsFFITableHeader* header,
+  uint16_t signatureIndex,
+  uint8_t* parameterTypes,
+  size_t parameterTypesCapacity,
+  mvm_TsFFISignature* out_signature
+) {
+  if (signatureIndex >= header->signatureCount || !out_signature) return MVM_E_INVALID_BYTECODE;
+  for (uint16_t i = 0; i < header->signatureCount; i++) {
+    uint16_t recordSize;
+    if (!vm_ffiReadU16(&cursor, &remaining, &recordSize) || recordSize < 2 || recordSize > remaining) return MVM_E_INVALID_BYTECODE;
+    LongPtr record = cursor;
+    LongPtr recordCursor = record;
+    uint16_t recordRemaining = recordSize;
+    uint8_t argumentCount;
+    if (!vm_ffiReadU8(&recordCursor, &recordRemaining, &argumentCount) || recordSize != (uint16_t)argumentCount + 2) return MVM_E_INVALID_BYTECODE;
+    if (i == signatureIndex && parameterTypes && argumentCount > parameterTypesCapacity) return MVM_E_INVALID_ARGUMENTS;
+    for (uint16_t p = 0; p < argumentCount; p++) {
+      uint8_t type;
+      if (!vm_ffiReadU8(&recordCursor, &recordRemaining, &type) || type != MVM_FFI_T_VALUE) return MVM_E_INVALID_BYTECODE;
+      if (i == signatureIndex && parameterTypes) parameterTypes[p] = type;
+    }
+    uint8_t resultType;
+    if (!vm_ffiReadU8(&recordCursor, &recordRemaining, &resultType) || resultType != MVM_FFI_T_VALUE || recordRemaining != 0) return MVM_E_INVALID_BYTECODE;
+    if (i == signatureIndex) {
+      out_signature->parameterTypes = parameterTypes;
+      out_signature->argumentCount = argumentCount;
+      out_signature->resultType = resultType;
+      return MVM_E_SUCCESS;
+    }
+    cursor = LongPtr_add(cursor, (int16_t)recordSize);
+    remaining -= recordSize;
+  }
+  return MVM_E_INVALID_BYTECODE;
+}
+
+static mvm_TeError vm_ffiReadImportDescriptor(
+  VM* vm,
+  uint16_t index,
+  mvm_HostFunctionID* out_callID,
+  uint16_t* out_moduleIndex,
+  uint16_t* out_nameIndex,
+  uint16_t* out_signatureIndex,
+  LongPtr* out_symbolStart,
+  uint16_t* out_symbolSize,
+  LongPtr* out_signatureStart,
+  uint16_t* out_signatureSize
+) {
+  LongPtr base;
+  uint16_t size;
+  vm_TsFFITableHeader header;
+  mvm_TeError error = vm_ffiGetSection(vm, &base, &size, &header);
+  if (error != MVM_E_SUCCESS || index >= header.importCount) return error == MVM_E_SUCCESS ? MVM_E_INVALID_ARGUMENTS : error;
+  LongPtr cursor = LongPtr_add(base, 8);
+  uint16_t remaining = size - 8;
+  *out_symbolStart = cursor;
+  error = vm_ffiSkipSymbols(&cursor, &remaining, &header, NULL);
+  if (error != MVM_E_SUCCESS) return error;
+  *out_symbolSize = (uint16_t)(size - 8 - remaining);
+  *out_signatureStart = cursor;
+  error = vm_ffiSkipSignatures(&cursor, &remaining, &header);
+  if (error != MVM_E_SUCCESS) return error;
+  *out_signatureSize = (uint16_t)(size - 8 - *out_symbolSize - remaining);
+  if ((uint32_t)header.importCount * 8u > remaining) return MVM_E_INVALID_BYTECODE;
+  for (uint16_t i = 0; i <= index; i++) {
+    uint16_t callID, moduleIndex, nameIndex, signatureIndex;
+    if (!vm_ffiReadU16(&cursor, &remaining, &callID) ||
+        !vm_ffiReadU16(&cursor, &remaining, &moduleIndex) ||
+        !vm_ffiReadU16(&cursor, &remaining, &nameIndex) ||
+        !vm_ffiReadU16(&cursor, &remaining, &signatureIndex)) return MVM_E_INVALID_BYTECODE;
+    if (i == index) {
+      if (moduleIndex >= header.symbolCount || nameIndex >= header.symbolCount || signatureIndex >= header.signatureCount) return MVM_E_INVALID_BYTECODE;
+      *out_callID = callID;
+      *out_moduleIndex = moduleIndex;
+      *out_nameIndex = nameIndex;
+      *out_signatureIndex = signatureIndex;
+    }
+  }
+  return MVM_E_SUCCESS;
+}
+
+static mvm_TeError vm_ffiReadExportDescriptor(
+  VM* vm,
+  uint16_t index,
+  mvm_VMExportID* out_callID,
+  uint16_t* out_nameIndex,
+  uint16_t* out_signatureIndex,
+  LongPtr* out_symbolStart,
+  uint16_t* out_symbolSize,
+  LongPtr* out_signatureStart,
+  uint16_t* out_signatureSize
+) {
+  LongPtr base;
+  uint16_t size;
+  vm_TsFFITableHeader header;
+  mvm_TeError error = vm_ffiGetSection(vm, &base, &size, &header);
+  if (error != MVM_E_SUCCESS || index >= header.exportCount) return error == MVM_E_SUCCESS ? MVM_E_INVALID_ARGUMENTS : error;
+  LongPtr cursor = LongPtr_add(base, 8);
+  uint16_t remaining = size - 8;
+  *out_symbolStart = cursor;
+  error = vm_ffiSkipSymbols(&cursor, &remaining, &header, NULL);
+  if (error != MVM_E_SUCCESS) return error;
+  *out_symbolSize = (uint16_t)(size - 8 - remaining);
+  *out_signatureStart = cursor;
+  error = vm_ffiSkipSignatures(&cursor, &remaining, &header);
+  if (error != MVM_E_SUCCESS) return error;
+  *out_signatureSize = (uint16_t)(size - 8 - *out_symbolSize - remaining);
+  if ((uint32_t)header.importCount * 8u + (uint32_t)header.exportCount * 6u > remaining) return MVM_E_INVALID_BYTECODE;
+  if (!vm_ffiSkip(&cursor, &remaining, (uint16_t)(header.importCount * 8u))) return MVM_E_INVALID_BYTECODE;
+  for (uint16_t i = 0; i <= index; i++) {
+    uint16_t callID, nameIndex, signatureIndex;
+    if (!vm_ffiReadU16(&cursor, &remaining, &callID) ||
+        !vm_ffiReadU16(&cursor, &remaining, &nameIndex) ||
+        !vm_ffiReadU16(&cursor, &remaining, &signatureIndex)) return MVM_E_INVALID_BYTECODE;
+    if (i == index) {
+      if (nameIndex >= header.symbolCount || signatureIndex >= header.signatureCount) return MVM_E_INVALID_BYTECODE;
+      *out_callID = callID;
+      *out_nameIndex = nameIndex;
+      *out_signatureIndex = signatureIndex;
+    }
+  }
+  return MVM_E_SUCCESS;
+}
+
+static mvm_TeError vm_ffiDecodeSymbols(
+  const vm_TsFFITableHeader* header,
+  LongPtr symbolCursor,
+  uint16_t symbolBytes,
+  uint16_t firstIndex,
+  uint16_t secondIndex,
+  uint8_t* scratch,
+  size_t scratchSize,
+  uint16_t* out_firstStart,
+  uint16_t* out_firstSize,
+  uint16_t* out_secondStart,
+  uint16_t* out_secondSize,
+  uint16_t* out_decodedSize
+) {
+  uint16_t remaining = symbolBytes;
+  uint32_t decodedSize = 0;
+  uint16_t previousStart = 0;
+  uint16_t previousSize = 0;
+  for (uint16_t i = 0; i < header->symbolCount; i++) {
+    uint16_t backrefStart, backrefLength, tailLength;
+    if (!vm_ffiReadU16(&symbolCursor, &remaining, &backrefStart) ||
+        !vm_ffiReadU16(&symbolCursor, &remaining, &backrefLength) ||
+        !vm_ffiReadU16(&symbolCursor, &remaining, &tailLength) ||
+        (uint32_t)backrefStart + backrefLength > decodedSize ||
+        decodedSize + backrefLength + tailLength > scratchSize ||
+        (backrefLength == 0 && backrefStart != 0) || tailLength > remaining) return MVM_E_INVALID_BYTECODE;
+    uint16_t currentStart = (uint16_t)decodedSize;
+    for (uint16_t j = 0; j < backrefLength; j++) scratch[decodedSize + j] = scratch[backrefStart + j];
+    decodedSize += backrefLength;
+    for (uint16_t j = 0; j < tailLength; j++) {
+      scratch[decodedSize++] = LongPtr_read1(symbolCursor);
+      symbolCursor = LongPtr_add(symbolCursor, 1);
+    }
+    remaining -= tailLength;
+
+    if (i > 0) {
+      uint16_t common = previousSize < (uint16_t)(decodedSize - currentStart) ? previousSize : (uint16_t)(decodedSize - currentStart);
+      int comparison = 0;
+      for (uint16_t j = 0; j < common; j++) {
+        uint8_t a = scratch[previousStart + j];
+        uint8_t b = scratch[currentStart + j];
+        if (a != b) { comparison = a < b ? -1 : 1; break; }
+      }
+      if (comparison > 0 || (comparison == 0 && previousSize >= decodedSize - currentStart)) return MVM_E_INVALID_BYTECODE;
+    }
+    previousStart = currentStart;
+    previousSize = (uint16_t)(decodedSize - currentStart);
+    if (i == firstIndex) { *out_firstStart = currentStart; *out_firstSize = previousSize; }
+    if (i == secondIndex) { *out_secondStart = currentStart; *out_secondSize = previousSize; }
+  }
+  if (remaining != 0 || firstIndex >= header->symbolCount || secondIndex >= header->symbolCount) return MVM_E_INVALID_BYTECODE;
+  *out_decodedSize = (uint16_t)decodedSize;
+  return MVM_E_SUCCESS;
+}
+
+static bool vm_getNamedImportArity(VM* vm, mvm_HostFunctionID callID, uint8_t* out_argumentCount) {
+  LongPtr base;
+  uint16_t size;
+  vm_TsFFITableHeader header;
+  if (vm_ffiGetSection(vm, &base, &size, &header) != MVM_E_SUCCESS) return false;
+  if (size < 8) return false;
+  LongPtr cursor = LongPtr_add(base, 8);
+  uint16_t remaining = size - 8;
+  if (vm_ffiSkipSymbols(&cursor, &remaining, &header, NULL) != MVM_E_SUCCESS) return false;
+  LongPtr signatureStart = cursor;
+  uint16_t signatureRemaining = remaining;
+  if (vm_ffiSkipSignatures(&cursor, &remaining, &header) != MVM_E_SUCCESS || (uint32_t)header.importCount * 8u > remaining) return false;
+  for (uint16_t i = 0; i < header.importCount; i++) {
+    uint16_t id, moduleIndex, nameIndex, signatureIndex;
+    if (!vm_ffiReadU16(&cursor, &remaining, &id) ||
+        !vm_ffiReadU16(&cursor, &remaining, &moduleIndex) ||
+        !vm_ffiReadU16(&cursor, &remaining, &nameIndex) ||
+        !vm_ffiReadU16(&cursor, &remaining, &signatureIndex)) return false;
+    if (id == callID) {
+      mvm_TsFFISignature signature;
+      if (vm_ffiReadSignature(signatureStart, signatureRemaining, &header, signatureIndex, NULL, 0, &signature) != MVM_E_SUCCESS) return false;
+      *out_argumentCount = signature.argumentCount;
+      return true;
+    }
+  }
+  return false;
+}
+
+static bool vm_getNamedExportArity(VM* vm, mvm_VMExportID callID, uint8_t* out_argumentCount) {
+  LongPtr base;
+  uint16_t size;
+  vm_TsFFITableHeader header;
+  if (vm_ffiGetSection(vm, &base, &size, &header) != MVM_E_SUCCESS) return false;
+  if (size < 8) return false;
+  LongPtr cursor = LongPtr_add(base, 8);
+  uint16_t remaining = size - 8;
+  if (vm_ffiSkipSymbols(&cursor, &remaining, &header, NULL) != MVM_E_SUCCESS) return false;
+  LongPtr signatureStart = cursor;
+  uint16_t signatureRemaining = remaining;
+  if (vm_ffiSkipSignatures(&cursor, &remaining, &header) != MVM_E_SUCCESS ||
+      (uint32_t)header.importCount * 8u + (uint32_t)header.exportCount * 6u > remaining ||
+      !vm_ffiSkip(&cursor, &remaining, (uint16_t)(header.importCount * 8u))) return false;
+  for (uint16_t i = 0; i < header.exportCount; i++) {
+    uint16_t id, nameIndex, signatureIndex;
+    if (!vm_ffiReadU16(&cursor, &remaining, &id) ||
+        !vm_ffiReadU16(&cursor, &remaining, &nameIndex) ||
+        !vm_ffiReadU16(&cursor, &remaining, &signatureIndex) ||
+        nameIndex >= header.symbolCount || signatureIndex >= header.signatureCount) return false;
+    if (id == callID) {
+      mvm_TsFFISignature signature;
+      if (vm_ffiReadSignature(signatureStart, signatureRemaining, &header, signatureIndex, NULL, 0, &signature) != MVM_E_SUCCESS) return false;
+      *out_argumentCount = signature.argumentCount;
+      return true;
+    }
+  }
+  return false;
+}
+
+mvm_TeError mvm_getNamedImportCount(mvm_VM* vm, uint16_t* out_count) {
+  LongPtr base;
+  uint16_t size;
+  vm_TsFFITableHeader header;
+  mvm_TeError error = vm_ffiGetSection(vm, &base, &size, &header);
+  (void)base;
+  (void)size;
+  if (error == MVM_E_SUCCESS && !out_count) return MVM_E_INVALID_ARGUMENTS;
+  if (error == MVM_E_SUCCESS) *out_count = header.importCount;
+  return error;
+}
+
+mvm_TeError mvm_getNamedExportCount(mvm_VM* vm, uint16_t* out_count) {
+  LongPtr base;
+  uint16_t size;
+  vm_TsFFITableHeader header;
+  mvm_TeError error = vm_ffiGetSection(vm, &base, &size, &header);
+  (void)base;
+  (void)size;
+  if (error == MVM_E_SUCCESS && !out_count) return MVM_E_INVALID_ARGUMENTS;
+  if (error == MVM_E_SUCCESS) *out_count = header.exportCount;
+  return error;
+}
+
+mvm_TeError mvm_getNamedFFIScratchSize(mvm_VM* vm, size_t* out_size) {
+  LongPtr base;
+  uint16_t size;
+  vm_TsFFITableHeader header;
+  mvm_TeError error = vm_ffiGetSection(vm, &base, &size, &header);
+  if (error != MVM_E_SUCCESS) return error;
+  if (!out_size) return MVM_E_INVALID_ARGUMENTS;
+  if (size < 8) {
+    *out_size = 0;
+    return MVM_E_SUCCESS;
+  }
+  LongPtr cursor = LongPtr_add(base, 8);
+  uint16_t remaining = size - 8;
+  uint32_t decodedSize;
+  error = vm_ffiSkipSymbols(&cursor, &remaining, &header, &decodedSize);
+  if (error != MVM_E_SUCCESS) return error;
+  *out_size = (size_t)decodedSize + 257u;
+  return MVM_E_SUCCESS;
+}
+
+mvm_TeError mvm_getNamedImport(mvm_VM* vm, uint16_t index, uint8_t* scratch, size_t scratchSize, mvm_TsNamedImportInfo* out_info) {
+  if (!scratch || !out_info) return MVM_E_INVALID_ARGUMENTS;
+  size_t requiredScratch;
+  mvm_TeError error = mvm_getNamedFFIScratchSize(vm, &requiredScratch);
+  if (error != MVM_E_SUCCESS) return error;
+  if (scratchSize < requiredScratch) return MVM_E_INVALID_ARGUMENTS;
+
+  mvm_HostFunctionID callID;
+  uint16_t moduleIndex, nameIndex, signatureIndex;
+  LongPtr symbolStart, signatureStart;
+  uint16_t symbolSize, signatureSize;
+  error = vm_ffiReadImportDescriptor(vm, index, &callID, &moduleIndex, &nameIndex, &signatureIndex,
+    &symbolStart, &symbolSize, &signatureStart, &signatureSize);
+  if (error != MVM_E_SUCCESS) return error;
+
+  LongPtr base;
+  uint16_t sectionSize;
+  vm_TsFFITableHeader header;
+  error = vm_ffiGetSection(vm, &base, &sectionSize, &header);
+  if (error != MVM_E_SUCCESS) return error;
+  uint16_t moduleStart, moduleSize, nameStart, nameSize, decodedSize;
+  error = vm_ffiDecodeSymbols(&header, symbolStart, symbolSize, moduleIndex, nameIndex, scratch, scratchSize,
+    &moduleStart, &moduleSize, &nameStart, &nameSize, &decodedSize);
+  if (error != MVM_E_SUCCESS || (size_t)decodedSize + 257u > scratchSize) return error == MVM_E_SUCCESS ? MVM_E_INVALID_ARGUMENTS : error;
+  mvm_TsFFISignature signature;
+  error = vm_ffiReadSignature(signatureStart, signatureSize, &header, signatureIndex,
+    scratch + decodedSize, scratchSize - decodedSize, &signature);
+  if (error != MVM_E_SUCCESS) return error;
+
+  out_info->callID = callID;
+  out_info->moduleName = scratch + moduleStart;
+  out_info->moduleNameSize = moduleSize;
+  out_info->importName = scratch + nameStart;
+  out_info->importNameSize = nameSize;
+  out_info->signature = signature;
+  return MVM_E_SUCCESS;
+}
+
+mvm_TeError mvm_getNamedExport(mvm_VM* vm, uint16_t index, uint8_t* scratch, size_t scratchSize, mvm_TsNamedExportInfo* out_info) {
+  if (!scratch || !out_info) return MVM_E_INVALID_ARGUMENTS;
+  size_t requiredScratch;
+  mvm_TeError error = mvm_getNamedFFIScratchSize(vm, &requiredScratch);
+  if (error != MVM_E_SUCCESS) return error;
+  if (scratchSize < requiredScratch) return MVM_E_INVALID_ARGUMENTS;
+
+  mvm_VMExportID callID;
+  uint16_t nameIndex, signatureIndex;
+  LongPtr symbolStart, signatureStart;
+  uint16_t symbolSize, signatureSize;
+  error = vm_ffiReadExportDescriptor(vm, index, &callID, &nameIndex, &signatureIndex,
+    &symbolStart, &symbolSize, &signatureStart, &signatureSize);
+  if (error != MVM_E_SUCCESS) return error;
+
+  LongPtr base;
+  uint16_t sectionSize;
+  vm_TsFFITableHeader header;
+  error = vm_ffiGetSection(vm, &base, &sectionSize, &header);
+  if (error != MVM_E_SUCCESS) return error;
+  uint16_t nameStart, nameSize, unusedStart, unusedSize, decodedSize;
+  error = vm_ffiDecodeSymbols(&header, symbolStart, symbolSize, nameIndex, nameIndex, scratch, scratchSize,
+    &nameStart, &nameSize, &unusedStart, &unusedSize, &decodedSize);
+  if (error != MVM_E_SUCCESS || (size_t)decodedSize + 257u > scratchSize) return error == MVM_E_SUCCESS ? MVM_E_INVALID_ARGUMENTS : error;
+  mvm_TsFFISignature signature;
+  error = vm_ffiReadSignature(signatureStart, signatureSize, &header, signatureIndex,
+    scratch + decodedSize, scratchSize - decodedSize, &signature);
+  if (error != MVM_E_SUCCESS) return error;
+
+  out_info->callID = callID;
+  out_info->exportName = scratch + nameStart;
+  out_info->exportNameSize = nameSize;
+  out_info->signature = signature;
+  return MVM_E_SUCCESS;
+}
+
+mvm_TeError mvm_bindNamedImport(mvm_VM* vm, mvm_HostFunctionID callID, uint8_t argumentCount, mvm_TfHostFunction handler) {
+  uint8_t expectedArgumentCount;
+  if (!vm || !handler || !vm_getNamedImportArity(vm, callID, &expectedArgumentCount) || expectedArgumentCount != argumentCount) {
+    return MVM_E_FFI_ABI_ERROR;
+  }
+  uint16_t importCount = getSectionSize(vm, BCS_IMPORT_TABLE) / sizeof(vm_TsImportTableEntry);
+  LongPtr importCursor = getBytecodeSection(vm, BCS_IMPORT_TABLE, NULL);
+  mvm_TfHostFunction* resolvedImports = vm_getResolvedImports(vm);
+  bool found = false;
+  for (uint16_t i = 0; i < importCount; i++) {
+    uint16_t importedID = LongPtr_read2_unaligned(importCursor);
+    importCursor = LongPtr_add(importCursor, 2);
+    if (importedID == callID) {
+      if (resolvedImports[i] != &vm_unboundNamedImportHandler) return MVM_E_FFI_ABI_ERROR;
+      found = true;
+    }
+  }
+  if (!found) return MVM_E_UNRESOLVED_IMPORT;
+  importCursor = getBytecodeSection(vm, BCS_IMPORT_TABLE, NULL);
+  found = false;
+  for (uint16_t i = 0; i < importCount; i++) {
+    uint16_t importedID = LongPtr_read2_unaligned(importCursor);
+    importCursor = LongPtr_add(importCursor, 2);
+    if (importedID == callID) {
+      if (resolvedImports[i] != &vm_unboundNamedImportHandler) return MVM_E_FFI_ABI_ERROR;
+      resolvedImports[i] = handler;
+      vm_getNamedImportArities(vm)[i] = argumentCount;
+      found = true;
+    }
+  }
+  return found ? MVM_E_SUCCESS : MVM_E_UNRESOLVED_IMPORT;
+}
+
+mvm_TeError mvm_finalizeNamedImports(mvm_VM* vm) {
+  if (!vm) return MVM_E_INVALID_ARGUMENTS;
+  uint16_t importCount = getSectionSize(vm, BCS_IMPORT_TABLE) / sizeof(vm_TsImportTableEntry);
+  mvm_TfHostFunction* resolvedImports = vm_getResolvedImports(vm);
+  for (uint16_t i = 0; i < importCount; i++) {
+    if (resolvedImports[i] == &vm_unboundNamedImportHandler) {
+      return MVM_E_FFI_ABI_ERROR;
+    }
+  }
+  return MVM_E_SUCCESS;
+}
+
+mvm_TeError mvm_callNamedExport(mvm_VM* vm, mvm_VMExportID exportID, mvm_Value* out_result, mvm_Value* args, uint8_t argCount) {
+  uint8_t expectedArgumentCount;
+  if (!vm || !vm_getNamedExportArity(vm, exportID, &expectedArgumentCount) || expectedArgumentCount != argCount) {
+    return MVM_E_FFI_ABI_ERROR;
+  }
+  mvm_Value exportValue;
+  mvm_TeError error = mvm_resolveExports(vm, &exportID, &exportValue, 1);
+  if (error != MVM_E_SUCCESS) return error;
+  return mvm_call(vm, exportValue, out_result, args, argCount);
 }
 
 /**
@@ -4004,10 +4698,11 @@ void mvm_getMemoryStats(VM* vm, mvm_TsMemoryStats* r) {
   r->fragmentCount++;
 
   // Import table size
-  r->importTableSize = getSectionSize(vm, BCS_IMPORT_TABLE) / sizeof (vm_TsImportTableEntry) * sizeof(mvm_TfHostFunction);
+  r->importTableSize = getSectionSize(vm, BCS_IMPORT_TABLE) / sizeof (vm_TsImportTableEntry) *
+    (sizeof(mvm_TfHostFunction) + sizeof(uint16_t));
 
   // Global variables size
-  r->globalVariablesSize = getSectionSize(vm, BCS_IMPORT_TABLE);
+  r->globalVariablesSize = getSectionSize(vm, BCS_GLOBALS);
 
   r->stackHighWaterMark = vm->stackHighWaterMark;
 
@@ -6358,6 +7053,11 @@ static inline mvm_TfHostFunction* vm_getResolvedImports(VM* vm) {
   return (mvm_TfHostFunction*)(vm + 1); // Starts right after the header
 }
 
+static inline uint16_t* vm_getNamedImportArities(VM* vm) {
+  uint16_t importCount = getSectionSize(vm, BCS_IMPORT_TABLE) / sizeof(vm_TsImportTableEntry);
+  return (uint16_t*)(vm_getResolvedImports(vm) + importCount);
+}
+
 static inline mvm_HostFunctionID vm_getHostFunctionId(VM* vm, uint16_t hostFunctionIndex) {
   LongPtr lpImportTable = getBytecodeSection(vm, BCS_IMPORT_TABLE, NULL);
   LongPtr lpImportTableEntry = LongPtr_add(lpImportTable, hostFunctionIndex * sizeof (vm_TsImportTableEntry));
@@ -7996,14 +8696,16 @@ static void serializePointers(VM* vm, mvm_TsBytecodeHeader* bc) {
   uint16_t n;
   uint16_t* p;
 
-  uint16_t heapOffset = bc->sectionOffsets[BCS_HEAP];
+  uint16_t globalsSectionIndex = LongPtr_read1(MVM_LONG_PTR_NEW(bc)) == 8 ? (uint8_t)BCS_GLOBALS - 1 : (uint8_t)BCS_GLOBALS;
+  uint16_t heapSectionIndex = LongPtr_read1(MVM_LONG_PTR_NEW(bc)) == 8 ? (uint8_t)BCS_HEAP - 1 : (uint8_t)BCS_HEAP;
+  uint16_t heapOffset = bc->sectionOffsets[heapSectionIndex];
   uint16_t heapSize = bc->bytecodeSize - heapOffset;
 
-  uint16_t* pGlobals = (uint16_t*)((uint8_t*)bc + bc->sectionOffsets[BCS_GLOBALS]);
+  uint16_t* pGlobals = (uint16_t*)((uint8_t*)bc + bc->sectionOffsets[globalsSectionIndex]);
   uint16_t* heapMemory = (uint16_t*)((uint8_t*)bc + heapOffset);
 
   // Roots in global variables
-  uint16_t globalsSize = bc->sectionOffsets[BCS_GLOBALS + 1] - bc->sectionOffsets[BCS_GLOBALS];
+  uint16_t globalsSize = bc->sectionOffsets[heapSectionIndex] - bc->sectionOffsets[globalsSectionIndex];
   p = pGlobals;
   n = globalsSize / 2;
   TABLE_COVERAGE(n ? 1 : 0, 2, 580); // Hit 1/2
@@ -8048,6 +8750,7 @@ void* mvm_createSnapshot(mvm_VM* vm, size_t* out_size) {
 
   uint16_t heapOffset = getSectionOffset(vm->lpBytecode, BCS_HEAP);
   uint16_t heapSize = getHeapSize(vm);
+  bool isLegacyBytecode = LongPtr_read1(vm->lpBytecode) == 8;
 
   // This assumes that the heap is the last section in the bytecode. Since the
   // heap is the only part of the bytecode image that changes size, we can just
@@ -8074,9 +8777,28 @@ void* mvm_createSnapshot(mvm_VM* vm, size_t* out_size) {
   // some header fields, which we'll update later).
   memcpy_long(pNewBytecode, vm->lpBytecode, sizeOfConstantPart);
 
+  if (isLegacyBytecode) {
+    // v8 had a 32-bit feature mask and no FFI section. v9 stores the mask in
+    // 16 bits, which leaves room for the ninth section offset without moving
+    // the payload. An empty FFI section is represented by equal FFI/globals
+    // offsets.
+    pNewBytecode->bytecodeVersion = MVM_ENGINE_MAJOR_VERSION;
+    pNewBytecode->headerSize = sizeof(mvm_TsBytecodeHeader);
+    pNewBytecode->requiredEngineVersion = LongPtr_read1(LongPtr_add(vm->lpBytecode, 2));
+    pNewBytecode->numericOptions = LongPtr_read1(LongPtr_add(vm->lpBytecode, 3));
+    pNewBytecode->requiredFeatureFlags = LongPtr_read2_unaligned(LongPtr_add(vm->lpBytecode, 8));
+    for (uint8_t section = 0; section < BCS_SECTION_COUNT; section++) {
+      if (section == BCS_FFI_TABLE || section == BCS_GLOBALS) {
+        pNewBytecode->sectionOffsets[section] = sizeOfConstantPart;
+      } else {
+        pNewBytecode->sectionOffsets[section] = getSectionOffset(vm->lpBytecode, (mvm_TeBytecodeSection)section);
+      }
+    }
+  }
+
   // Snapshot the globals memory
   uint16_t sizeOfGlobals = getSectionSize(vm, BCS_GLOBALS);
-  memcpy((uint8_t*)pNewBytecode + pNewBytecode->sectionOffsets[BCS_GLOBALS], vm->globals, sizeOfGlobals);
+  memcpy((uint8_t*)pNewBytecode + getSectionOffset(MVM_LONG_PTR_NEW(pNewBytecode), BCS_GLOBALS), vm->globals, sizeOfGlobals);
 
   // Snapshot heap memory
 
@@ -8085,7 +8807,7 @@ void* mvm_createSnapshot(mvm_VM* vm, size_t* out_size) {
   // in reverse order. (Edit: actually, they're also linked forwards now, but I
   // might retract that at some point so I'll leave this with the backwards
   // iteration).
-  uint8_t* pHeapStart = (uint8_t*)pNewBytecode + pNewBytecode->sectionOffsets[BCS_HEAP];
+  uint8_t* pHeapStart = (uint8_t*)pNewBytecode + getSectionOffset(MVM_LONG_PTR_NEW(pNewBytecode), BCS_HEAP);
   uint8_t* pTarget = pHeapStart + heapSize;
   uint16_t cursor = heapSize;
   TABLE_COVERAGE(pBucket ? 1 : 0, 2, 586); // Hit 2/2

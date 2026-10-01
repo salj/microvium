@@ -138,8 +138,7 @@ function sayHello() {
     ObjectGet();                         // 5                 ./test/end-to-end/tests/z-issue-48.test.mvm.js:25:21
     Call(count 2, flag true);            // 2                 ./test/end-to-end/tests/z-issue-48.test.mvm.js:25:21
     LoadVar(index 1);                    // 3  i              ./test/end-to-end/tests/z-issue-48.test.mvm.js:24:26
-    Literal(lit 1);                      // 4                 ./test/end-to-end/tests/z-issue-48.test.mvm.js:24:26
-    BinOp(op '+');                       // 3                 ./test/end-to-end/tests/z-issue-48.test.mvm.js:24:26
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 3  ./test/end-to-end/tests/z-issue-48.test.mvm.js:24:26
     LoadVar(index 2);                    // 4                 ./test/end-to-end/tests/z-issue-48.test.mvm.js:24:26
     StoreVar(index 1);                   // 3  i              ./test/end-to-end/tests/z-issue-48.test.mvm.js:24:26
     Pop(count 1);                        // 2                 ./test/end-to-end/tests/z-issue-48.test.mvm.js:24:26
@@ -165,8 +164,7 @@ function sayHello() {
     ObjectGet();                         // 5                 ./test/end-to-end/tests/z-issue-48.test.mvm.js:28:21
     Call(count 2, flag true);            // 2                 ./test/end-to-end/tests/z-issue-48.test.mvm.js:28:21
     LoadVar(index 1);                    // 3  i              ./test/end-to-end/tests/z-issue-48.test.mvm.js:27:26
-    Literal(lit 1);                      // 4                 ./test/end-to-end/tests/z-issue-48.test.mvm.js:27:26
-    BinOp(op '+');                       // 3                 ./test/end-to-end/tests/z-issue-48.test.mvm.js:27:26
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 3  ./test/end-to-end/tests/z-issue-48.test.mvm.js:27:26
     LoadVar(index 2);                    // 4                 ./test/end-to-end/tests/z-issue-48.test.mvm.js:27:26
     StoreVar(index 1);                   // 3  i              ./test/end-to-end/tests/z-issue-48.test.mvm.js:27:26
     Pop(count 1);                        // 2                 ./test/end-to-end/tests/z-issue-48.test.mvm.js:27:26

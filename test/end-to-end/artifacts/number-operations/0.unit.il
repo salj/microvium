@@ -1077,8 +1077,7 @@ function testIncrDecr() {
     Literal(lit undefined);              // 3                 ./test/end-to-end/tests/number-operations.test.mvm.js:201:3
     LoadVar(index 0);                    // 4  x              ./test/end-to-end/tests/number-operations.test.mvm.js:201:15
     LoadVar(index 3);                    // 5                 ./test/end-to-end/tests/number-operations.test.mvm.js:201:15
-    Literal(lit 1);                      // 6                 ./test/end-to-end/tests/number-operations.test.mvm.js:201:15
-    BinOp(op '+');                       // 5                 ./test/end-to-end/tests/number-operations.test.mvm.js:201:15
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 5  ./test/end-to-end/tests/number-operations.test.mvm.js:201:15
     LoadVar(index 4);                    // 6                 ./test/end-to-end/tests/number-operations.test.mvm.js:201:15
     StoreVar(index 0);                   // 5  x              ./test/end-to-end/tests/number-operations.test.mvm.js:201:15
     Pop(count 1);                        // 4                 ./test/end-to-end/tests/number-operations.test.mvm.js:201:15
@@ -1092,8 +1091,7 @@ function testIncrDecr() {
     LoadGlobal(name 'assertEqual');      // 2                 ./test/end-to-end/tests/number-operations.test.mvm.js:203:3
     Literal(lit undefined);              // 3                 ./test/end-to-end/tests/number-operations.test.mvm.js:203:3
     LoadVar(index 0);                    // 4  x              ./test/end-to-end/tests/number-operations.test.mvm.js:203:15
-    Literal(lit 1);                      // 5                 ./test/end-to-end/tests/number-operations.test.mvm.js:203:15
-    BinOp(op '+');                       // 4                 ./test/end-to-end/tests/number-operations.test.mvm.js:203:15
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 4  ./test/end-to-end/tests/number-operations.test.mvm.js:203:15
     LoadVar(index 3);                    // 5                 ./test/end-to-end/tests/number-operations.test.mvm.js:203:15
     StoreVar(index 0);                   // 4  x              ./test/end-to-end/tests/number-operations.test.mvm.js:203:15
     Literal(lit 3);                      // 5                 ./test/end-to-end/tests/number-operations.test.mvm.js:203:20
@@ -1107,8 +1105,7 @@ function testIncrDecr() {
     Literal(lit undefined);              // 3                 ./test/end-to-end/tests/number-operations.test.mvm.js:205:3
     LoadVar(index 0);                    // 4  x              ./test/end-to-end/tests/number-operations.test.mvm.js:205:15
     LoadVar(index 3);                    // 5                 ./test/end-to-end/tests/number-operations.test.mvm.js:205:15
-    Literal(lit 1);                      // 6                 ./test/end-to-end/tests/number-operations.test.mvm.js:205:15
-    BinOp(op '-');                       // 5                 ./test/end-to-end/tests/number-operations.test.mvm.js:205:15
+    NumericUnOp(op '--', numeric type 'f64' (default context)); // 5  ./test/end-to-end/tests/number-operations.test.mvm.js:205:15
     LoadVar(index 4);                    // 6                 ./test/end-to-end/tests/number-operations.test.mvm.js:205:15
     StoreVar(index 0);                   // 5  x              ./test/end-to-end/tests/number-operations.test.mvm.js:205:15
     Pop(count 1);                        // 4                 ./test/end-to-end/tests/number-operations.test.mvm.js:205:15
@@ -1122,8 +1119,7 @@ function testIncrDecr() {
     LoadGlobal(name 'assertEqual');      // 2                 ./test/end-to-end/tests/number-operations.test.mvm.js:207:3
     Literal(lit undefined);              // 3                 ./test/end-to-end/tests/number-operations.test.mvm.js:207:3
     LoadVar(index 0);                    // 4  x              ./test/end-to-end/tests/number-operations.test.mvm.js:207:15
-    Literal(lit 1);                      // 5                 ./test/end-to-end/tests/number-operations.test.mvm.js:207:15
-    BinOp(op '-');                       // 4                 ./test/end-to-end/tests/number-operations.test.mvm.js:207:15
+    NumericUnOp(op '--', numeric type 'f64' (default context)); // 4  ./test/end-to-end/tests/number-operations.test.mvm.js:207:15
     LoadVar(index 3);                    // 5                 ./test/end-to-end/tests/number-operations.test.mvm.js:207:15
     StoreVar(index 0);                   // 4  x              ./test/end-to-end/tests/number-operations.test.mvm.js:207:15
     Literal(lit 1);                      // 5                 ./test/end-to-end/tests/number-operations.test.mvm.js:207:20
@@ -1140,8 +1136,7 @@ function testIncrDecr() {
     LoadGlobal(name 'assertEqual');      // 2                 ./test/end-to-end/tests/number-operations.test.mvm.js:211:3
     Literal(lit undefined);              // 3                 ./test/end-to-end/tests/number-operations.test.mvm.js:211:3
     LoadVar(index 0);                    // 4  x              ./test/end-to-end/tests/number-operations.test.mvm.js:211:15
-    Literal(lit 1);                      // 5                 ./test/end-to-end/tests/number-operations.test.mvm.js:211:15
-    BinOp(op '+');                       // 4                 ./test/end-to-end/tests/number-operations.test.mvm.js:211:15
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 4  ./test/end-to-end/tests/number-operations.test.mvm.js:211:15
     LoadVar(index 3);                    // 5                 ./test/end-to-end/tests/number-operations.test.mvm.js:211:15
     StoreVar(index 0);                   // 4  x              ./test/end-to-end/tests/number-operations.test.mvm.js:211:15
     Literal(lit 2.5);                    // 5                 ./test/end-to-end/tests/number-operations.test.mvm.js:211:20
@@ -1149,8 +1144,7 @@ function testIncrDecr() {
     LoadGlobal(name 'assertEqual');      // 2                 ./test/end-to-end/tests/number-operations.test.mvm.js:212:3
     Literal(lit undefined);              // 3                 ./test/end-to-end/tests/number-operations.test.mvm.js:212:3
     LoadVar(index 0);                    // 4  x              ./test/end-to-end/tests/number-operations.test.mvm.js:212:15
-    Literal(lit 1);                      // 5                 ./test/end-to-end/tests/number-operations.test.mvm.js:212:15
-    BinOp(op '-');                       // 4                 ./test/end-to-end/tests/number-operations.test.mvm.js:212:15
+    NumericUnOp(op '--', numeric type 'f64' (default context)); // 4  ./test/end-to-end/tests/number-operations.test.mvm.js:212:15
     LoadVar(index 3);                    // 5                 ./test/end-to-end/tests/number-operations.test.mvm.js:212:15
     StoreVar(index 0);                   // 4  x              ./test/end-to-end/tests/number-operations.test.mvm.js:212:15
     Literal(lit 1.5);                    // 5                 ./test/end-to-end/tests/number-operations.test.mvm.js:212:20

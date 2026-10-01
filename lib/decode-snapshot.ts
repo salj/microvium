@@ -1,5 +1,5 @@
 import * as IL from './il';
-import { SnapshotIL, ENGINE_MAJOR_VERSION, HEADER_SIZE, ENGINE_MINOR_VERSION } from "./snapshot-il";
+import { SnapshotIL, ENGINE_MAJOR_VERSION, HEADER_SIZE, ENGINE_MINOR_VERSION, LEGACY_ENGINE_MAJOR_VERSION, LEGACY_HEADER_SIZE, SnapshotReadOptions, validateSnapshotBinary } from "./snapshot-il";
 import { notImplemented, invalidOperation, unexpected, hardAssert, assertUnreachable, notUndefined, reserved, entries } from "./utils";
 import { SmartBuffer } from 'smart-buffer';
 import { crc16ccitt } from "crc";
@@ -11,6 +11,7 @@ import { Snapshot } from '../lib';
 import { SnapshotClass } from './snapshot';
 import { blockTerminatingOpcodes } from './il-opcodes';
 import { decodeNumericTypeDescriptor, NumericType, numericTypeName } from './numeric-types';
+import { decodeFFIMetadata } from './ffi';
 
 // TODO: Everything "notImplemented" in this file.
 
@@ -69,8 +70,10 @@ export interface SnapshotReconstructionInfo {
 }
 
 /** Decode a snapshot (bytecode) to IL */
-export function decodeSnapshot(snapshot: Snapshot): { snapshotInfo: SnapshotIL, disassembly: string } {
+export function decodeSnapshot(snapshot: Snapshot, options: SnapshotReadOptions = {}): { snapshotInfo: SnapshotIL, disassembly: string } {
   const buffer = SmartBuffer.fromBuffer(snapshot.data);
+  const validationError = validateSnapshotBinary(snapshot.data, options);
+  if (validationError) return invalidOperation(`Invalid bytecode file (${validationError.err})`);
   let region: Region = [];
   let regionStack: { region: Region, regionName: string | undefined, regionStart: number }[] = [];
   let regionName: string | undefined;
@@ -87,18 +90,21 @@ export function decodeSnapshot(snapshot: Snapshot): { snapshotInfo: SnapshotIL, 
   beginRegion('Header');
 
   const bytecodeVersion = readHeaderField8('bytecodeVersion');
+  const isLegacyBytecode = bytecodeVersion === LEGACY_ENGINE_MAJOR_VERSION;
   const headerSize = readHeaderField8('headerSize');
   const requiredEngineVersion = readHeaderField8('requiredEngineVersion');
   const numericOptions = readHeaderField8('numericOptions');
   const bytecodeSize = readHeaderField16('bytecodeSize', false);
   const expectedCRC = readHeaderField16('expectedCRC', true);
-  const requiredFeatureFlags = readHeaderField32('requiredFeatureFlags', false);
+  const requiredFeatureFlags = isLegacyBytecode
+    ? readHeaderField32('requiredFeatureFlags', false)
+    : readHeaderField16('requiredFeatureFlags', false);
 
   if (bytecodeSize !== buffer.length) {
     return invalidOperation(`Invalid bytecode file (bytecode size mismatch)`);
   }
 
-  if (headerSize !== HEADER_SIZE) {
+  if (headerSize !== (isLegacyBytecode ? LEGACY_HEADER_SIZE : HEADER_SIZE)) {
     return invalidOperation(`Invalid bytecode file (header size unexpected)`);
   }
 
@@ -107,21 +113,21 @@ export function decodeSnapshot(snapshot: Snapshot): { snapshotInfo: SnapshotIL, 
     return invalidOperation(`Invalid bytecode file (CRC mismatch)`);
   }
 
-  if (bytecodeVersion !== ENGINE_MAJOR_VERSION) {
+  if (!isLegacyBytecode && bytecodeVersion !== ENGINE_MAJOR_VERSION) {
     return invalidOperation(`Bytecode version ${bytecodeVersion} is not supported`);
   }
 
   const usesNumericTypes = (requiredFeatureFlags & (1 << IL.ExecutionFlag.NumericTypes)) !== 0;
-  if (requiredEngineVersion > ENGINE_MINOR_VERSION) {
+  if (!isLegacyBytecode && requiredEngineVersion > ENGINE_MINOR_VERSION) {
     return invalidOperation(`Engine version ${requiredEngineVersion} requires a later engine (implemented ${ENGINE_MINOR_VERSION})`);
   }
-  if (requiredEngineVersion === 0 && (usesNumericTypes || numericOptions !== 0)) {
+  if (!isLegacyBytecode && requiredEngineVersion === 0 && (usesNumericTypes || numericOptions !== 0)) {
     return invalidOperation('Invalid numeric options for an engine-minor-0 snapshot');
   }
-  if (!usesNumericTypes && numericOptions !== 0) {
+  if (!isLegacyBytecode && !usesNumericTypes && numericOptions !== 0) {
     return invalidOperation('Numeric options require the numeric-types feature');
   }
-  if ((numericOptions & ~0x01) !== 0) {
+  if (!isLegacyBytecode && (numericOptions & ~0x01) !== 0) {
     return invalidOperation(`Unknown numeric option bits: 0x${numericOptions.toString(16)}`);
   }
 
@@ -129,6 +135,8 @@ export function decodeSnapshot(snapshot: Snapshot): { snapshotInfo: SnapshotIL, 
     globalSlots: new Map(),
     functions: new Map(),
     exports: new Map(),
+    namedImports: [],
+    namedExports: [],
     allocations: new Map(),
     flags: new Set(),
     numericOptions: { defaultFloatWidth: (numericOptions & 0x01) !== 0 ? 32 : 64 },
@@ -143,9 +151,20 @@ export function decodeSnapshot(snapshot: Snapshot): { snapshotInfo: SnapshotIL, 
 
   // Section offsets
   const sectionOffsets: Record<mvm_TeBytecodeSection, number> = {} as any;
-
-  for (let i = 0 as mvm_TeBytecodeSection; i < mvm_TeBytecodeSection.BCS_SECTION_COUNT; i++) {
-    sectionOffsets[i] = readHeaderField16(mvm_TeBytecodeSection[i], true);
+  if (isLegacyBytecode) {
+    const legacyNames = [
+      'BCS_IMPORT_TABLE', 'BCS_EXPORT_TABLE', 'BCS_SHORT_CALL_TABLE', 'BCS_BUILTINS',
+      'BCS_STRING_TABLE', 'BCS_ROM', 'BCS_GLOBALS', 'BCS_HEAP'
+    ];
+    const legacyOffsets = legacyNames.map(name => readHeaderField16(name, true));
+    for (let i = 0 as mvm_TeBytecodeSection; i < mvm_TeBytecodeSection.BCS_SECTION_COUNT; i++) {
+      const legacyIndex = i > mvm_TeBytecodeSection.BCS_FFI_TABLE ? i - 1 : i;
+      sectionOffsets[i] = legacyOffsets[legacyIndex];
+    }
+  } else {
+    for (let i = 0 as mvm_TeBytecodeSection; i < mvm_TeBytecodeSection.BCS_SECTION_COUNT; i++) {
+      sectionOffsets[i] = readHeaderField16(mvm_TeBytecodeSection[i], true);
+    }
   }
 
   endRegion('Header');
@@ -158,6 +177,7 @@ export function decodeSnapshot(snapshot: Snapshot): { snapshotInfo: SnapshotIL, 
   decodeFlags();
   decodeImportTable();
   decodeExportTable();
+  decodeFFITable();
   decodeShortCallTable();
   decodeBuiltins();
   decodeStringTable();
@@ -264,6 +284,15 @@ export function decodeSnapshot(snapshot: Snapshot): { snapshotInfo: SnapshotIL, 
       }
     }
     endRegion('Export Table');
+  }
+
+  function decodeFFITable() {
+    if (isLegacyBytecode) return;
+    const { offset, size } = getSectionInfo(mvm_TeBytecodeSection.BCS_FFI_TABLE);
+    if (size === 0) return;
+    const metadata = decodeFFIMetadata(snapshot.data.subarray(offset, offset + size));
+    snapshotInfo.namedImports = metadata.imports;
+    snapshotInfo.namedExports = metadata.exports;
   }
 
   function decodeShortCallTable() {

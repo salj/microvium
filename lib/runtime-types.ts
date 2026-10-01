@@ -94,6 +94,7 @@ export enum mvm_TeError {
   /* 58 */ MVM_E_UNINITIALIZED_GLOBAL, // A global variable was not set before it was used.
   /* 59 */ MVM_E_RESERVED_59,
   /* 60 */ MVM_E_NUMERIC_ERROR, // Invalid mixed-numeric operation or conversion.
+  /* 61 */ MVM_E_FFI_ABI_ERROR, // Named FFI signature or binding does not match.
 };
 
 
@@ -404,6 +405,9 @@ export enum mvm_TeBytecodeSection {
    * contains addressable allocations.
    */
   BCS_ROM,
+
+  /** Named import/export descriptors, compressed symbols, and signatures. */
+  BCS_FFI_TABLE,
 
   /**
    * Globals

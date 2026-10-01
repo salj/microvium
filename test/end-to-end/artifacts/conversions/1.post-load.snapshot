@@ -20,13 +20,25 @@ function Array_push() {
     Return();
 }
 
+function ['Microvium.numericIsInteger']() {
+  entry:
+    LoadArg(index 1);
+    NumericIsInteger();
+    Return();
+}
+
+function ['Microvium.numericKindOf']() {
+  entry:
+    LoadArg(index 1);
+    NumericKindOf();
+    Return();
+}
+
 function Number_isNaN() {
   entry:
-    // NaN is the only value that is not equal to itself
     LoadArg(index 1);
     LoadArg(index 1);
     BinOp(op '!==');
-    // NaN is the only value that is not equal to itself
     Return();
 }
 
@@ -164,7 +176,9 @@ function testConvertToNumber() {
 }
 
 allocation 6 = {
+  isInteger: &function ['Microvium.numericIsInteger'],
   isNaN: &function Number_isNaN,
+  kind: &function ['Microvium.numericKindOf'],
 };
 
 allocation 7 = {

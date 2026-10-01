@@ -227,8 +227,7 @@ function mutationOfLoopVar() {
     Call(count 2, flag true);
     LoadScoped(index 3);
     LoadVar(index 1);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 2);
     StoreScoped(index 3);
     Pop(count 1);
@@ -237,8 +236,7 @@ function mutationOfLoopVar() {
     ScopeClone();
     LoadScoped(index 0);
     LoadVar(index 1);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 2);
     StoreScoped(index 0);
     Pop(count 1);
@@ -267,8 +265,7 @@ function mutationOfLoopVar() {
     Call(count 1, flag true);
     LoadVar(index 1);
     LoadVar(index 2);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 3);
     StoreVar(index 1);
     Pop(count 1);
@@ -323,8 +320,7 @@ function popScope() {
     ScopeClone();
     LoadScoped(index 0);
     LoadVar(index 2);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 3);
     StoreScoped(index 0);
     Pop(count 1);
@@ -362,8 +358,7 @@ function popScope() {
     Call(count 1, flag true);
     LoadVar(index 2);
     LoadVar(index 3);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 4);
     StoreVar(index 2);
     Pop(count 1);
@@ -433,8 +428,7 @@ function test1() {
     ScopeClone();
     LoadScoped(index 0);
     LoadVar(index 1);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 2);
     StoreScoped(index 0);
     Pop(count 1);
@@ -463,8 +457,7 @@ function test1() {
     Call(count 1, flag true);
     LoadVar(index 1);
     LoadVar(index 2);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 3);
     StoreVar(index 1);
     Pop(count 1);
@@ -529,8 +522,7 @@ function testBreak() {
     ScopeClone();
     LoadScoped(index 0);
     LoadVar(index 2);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 3);
     StoreScoped(index 0);
     Pop(count 1);
@@ -569,8 +561,7 @@ function testBreak() {
     Call(count 1, flag true);
     LoadVar(index 2);
     LoadVar(index 3);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 4);
     StoreVar(index 2);
     Pop(count 1);
@@ -646,8 +637,7 @@ function testNestedBreak() {
     ScopeClone();
     LoadScoped(index 0);
     LoadVar(index 2);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 3);
     StoreScoped(index 0);
     Pop(count 1);
@@ -677,8 +667,7 @@ function testNestedBreak() {
     ScopeClone();
     LoadScoped(index 0);
     LoadVar(index 2);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 3);
     StoreScoped(index 0);
     Pop(count 1);
@@ -717,8 +706,7 @@ function testNestedBreak() {
     Call(count 1, flag true);
     LoadVar(index 2);
     LoadVar(index 3);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 4);
     StoreVar(index 2);
     Pop(count 1);

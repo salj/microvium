@@ -118,8 +118,7 @@ function sayHello() {
     ObjectGet();
     Call(count 2, flag true);
     LoadVar(index 1);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 2);
     StoreVar(index 1);
     Pop(count 1);
@@ -145,8 +144,7 @@ function sayHello() {
     ObjectGet();
     Call(count 2, flag true);
     LoadVar(index 1);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 2);
     StoreVar(index 1);
     Pop(count 1);

@@ -56,8 +56,7 @@ function ['#entry']() {
     Pop(count 1);                        // 2                 ./test/end-to-end/tests/uint8Array.test.mvm.js:10:8
     LoadVar(index 1);                    // 3  i              ./test/end-to-end/tests/uint8Array.test.mvm.js:9:34
     LoadVar(index 2);                    // 4                 ./test/end-to-end/tests/uint8Array.test.mvm.js:9:34
-    Literal(lit 1);                      // 5                 ./test/end-to-end/tests/uint8Array.test.mvm.js:9:34
-    BinOp(op '+');                       // 4                 ./test/end-to-end/tests/uint8Array.test.mvm.js:9:34
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 4  ./test/end-to-end/tests/uint8Array.test.mvm.js:9:34
     LoadVar(index 3);                    // 5                 ./test/end-to-end/tests/uint8Array.test.mvm.js:9:34
     StoreVar(index 1);                   // 4  i              ./test/end-to-end/tests/uint8Array.test.mvm.js:9:34
     Pop(count 1);                        // 3                 ./test/end-to-end/tests/uint8Array.test.mvm.js:9:34
@@ -177,8 +176,7 @@ function run() {
     Pop(count 1);                        // 2                 ./test/end-to-end/tests/uint8Array.test.mvm.js:32:10
     LoadVar(index 1);                    // 3  i              ./test/end-to-end/tests/uint8Array.test.mvm.js:31:36
     LoadVar(index 2);                    // 4                 ./test/end-to-end/tests/uint8Array.test.mvm.js:31:36
-    Literal(lit 1);                      // 5                 ./test/end-to-end/tests/uint8Array.test.mvm.js:31:36
-    BinOp(op '+');                       // 4                 ./test/end-to-end/tests/uint8Array.test.mvm.js:31:36
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 4  ./test/end-to-end/tests/uint8Array.test.mvm.js:31:36
     LoadVar(index 3);                    // 5                 ./test/end-to-end/tests/uint8Array.test.mvm.js:31:36
     StoreVar(index 1);                   // 4  i              ./test/end-to-end/tests/uint8Array.test.mvm.js:31:36
     Pop(count 1);                        // 3                 ./test/end-to-end/tests/uint8Array.test.mvm.js:31:36

@@ -18,21 +18,32 @@ slot v1 = 1;
 slot v2 = 2;
 slot v4 = 4;
 
+function ['Microvium.numericIsInteger']() {
+  entry:
+    LoadArg(index 1);
+    NumericIsInteger();
+    Return();
+}
+
+function ['Microvium.numericKindOf']() {
+  entry:
+    LoadArg(index 1);
+    NumericKindOf();
+    Return();
+}
+
 function Number_isNaN() {
   entry:
-    // NaN is the only value that is not equal to itself
     LoadArg(index 1);
     LoadArg(index 1);
     BinOp(op '!==');
-    // NaN is the only value that is not equal to itself
     Return();
 }
 
 function anonymous() {
   entry:
     LoadScoped(index 1);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 0);
     StoreScoped(index 1);
     Return();
@@ -41,8 +52,7 @@ function anonymous() {
 function anonymous1() {
   entry:
     LoadScoped(index 1);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 0);
     StoreScoped(index 1);
     Return();
@@ -83,8 +93,7 @@ function anonymous14() {
     Literal(lit 1000);
     LoadGlobal(name 'v1');
     LoadVar(index 1);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 2);
     StoreGlobal(name 'v1');
     Pop(count 1);
@@ -92,8 +101,7 @@ function anonymous14() {
     Literal(lit 100);
     LoadGlobal(name 'v2');
     LoadVar(index 2);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 3);
     StoreGlobal(name 'v2');
     Pop(count 1);
@@ -102,8 +110,7 @@ function anonymous14() {
     Literal(lit 10);
     LoadScoped(index 1);
     LoadVar(index 2);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 3);
     StoreScoped(index 1);
     Pop(count 1);
@@ -112,8 +119,7 @@ function anonymous14() {
     Literal(lit 1);
     LoadGlobal(name 'v4');
     LoadVar(index 2);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 3);
     StoreGlobal(name 'v4');
     Pop(count 1);
@@ -134,8 +140,7 @@ function anonymous2() {
 function anonymous3() {
   entry:
     LoadScoped(index 3);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 0);
     StoreScoped(index 3);
     Return();
@@ -145,8 +150,7 @@ function anonymous4() {
   entry:
     LoadScoped(index 2);
     LoadVar(index 0);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 1);
     StoreScoped(index 2);
     Pop(count 1);
@@ -157,8 +161,7 @@ function anonymous5() {
   entry:
     LoadScoped(index 5);
     LoadVar(index 0);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 1);
     StoreScoped(index 5);
     Pop(count 1);
@@ -169,8 +172,7 @@ function anonymous6() {
   entry:
     LoadScoped(index 3);
     LoadVar(index 0);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 1);
     StoreScoped(index 3);
     Pop(count 1);
@@ -261,8 +263,7 @@ function anonymous9() {
     BinOp(op '+');
     LoadScoped(index 12);
     LoadVar(index 2);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 3);
     StoreScoped(index 12);
     Pop(count 1);
@@ -275,8 +276,7 @@ function anonymous9() {
     BinOp(op '+');
     LoadScoped(index 13);
     LoadVar(index 2);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 3);
     StoreScoped(index 13);
     Pop(count 1);
@@ -285,8 +285,7 @@ function anonymous9() {
     BinOp(op '+');
     LoadScoped(index 16);
     LoadVar(index 2);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 3);
     StoreScoped(index 16);
     Pop(count 1);
@@ -299,8 +298,7 @@ function anonymous9() {
     BinOp(op '+');
     LoadScoped(index 14);
     LoadVar(index 2);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 3);
     StoreScoped(index 14);
     Pop(count 1);
@@ -309,8 +307,7 @@ function anonymous9() {
     BinOp(op '+');
     LoadScoped(index 18);
     LoadVar(index 2);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 3);
     StoreScoped(index 18);
     Pop(count 1);
@@ -323,8 +320,7 @@ function anonymous9() {
     BinOp(op '+');
     LoadScoped(index 2);
     LoadVar(index 2);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 3);
     StoreScoped(index 2);
     Pop(count 1);
@@ -337,8 +333,7 @@ function anonymous9() {
     BinOp(op '+');
     LoadScoped(index 3);
     LoadVar(index 2);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 3);
     StoreScoped(index 3);
     Pop(count 1);
@@ -347,8 +342,7 @@ function anonymous9() {
     BinOp(op '+');
     LoadScoped(index 6);
     LoadVar(index 2);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 3);
     StoreScoped(index 6);
     Pop(count 1);
@@ -361,8 +355,7 @@ function anonymous9() {
     BinOp(op '+');
     LoadScoped(index 4);
     LoadVar(index 2);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 3);
     StoreScoped(index 4);
     Pop(count 1);
@@ -371,8 +364,7 @@ function anonymous9() {
     BinOp(op '+');
     LoadScoped(index 8);
     LoadVar(index 2);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 3);
     StoreScoped(index 8);
     Pop(count 1);
@@ -383,8 +375,7 @@ function anonymous9() {
     BinOp(op '+');
     LoadVar(index 0);
     LoadVar(index 2);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 3);
     StoreVar(index 0);
     Pop(count 1);
@@ -687,8 +678,7 @@ function getObj2() {
 function increment() {
   entry:
     LoadScoped(index 1);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 0);
     StoreScoped(index 1);
     Return();
@@ -975,5 +965,7 @@ allocation 12 = Closure [
 ];
 
 allocation 6 = {
+  isInteger: &function ['Microvium.numericIsInteger'],
   isNaN: &function Number_isNaN,
+  kind: &function ['Microvium.numericKindOf'],
 };

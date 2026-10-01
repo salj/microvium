@@ -943,11 +943,6 @@ struct mvm_VM {
 
   void* context;
 
-  // Numeric snapshot semantics. Minor-0 snapshots leave numericTypes clear and
-  // keep the original raw-f64 representation.
-  bool numericTypes;
-  uint8_t defaultFloatWidth;
-
   #if MVM_INCLUDE_DEBUG_CAPABILITY
   TsBreakpoint* pBreakpoints;
   mvm_TfBreakpointCallback breakpointCallback;
@@ -960,6 +955,11 @@ struct mvm_VM {
   uint16_t heapSizeUsedAfterLastGC;
   uint16_t stackHighWaterMark;
   uint16_t heapHighWaterMark;
+
+  // Numeric snapshot semantics. Minor-0 snapshots leave numericTypes clear and
+  // keep the original raw-f64 representation.
+  bool numericTypes;
+  uint8_t defaultFloatWidth;
 
   #if MVM_VERY_EXPENSIVE_MEMORY_CHECKS
   // Amount to shift the heap over during each collection cycle
@@ -1171,7 +1171,9 @@ static TeTypeCode deepTypeOf(VM* vm, Value value);
 static bool vm_isString(VM* vm, Value value);
 static int32_t vm_readInt32(VM* vm, TeTypeCode type, Value value);
 static TeError vm_resolveExport(VM* vm, mvm_VMExportID id, Value* result);
+static bool vm_getNamedImportArity(VM* vm, mvm_HostFunctionID callID, uint8_t* out_argumentCount);
 static inline mvm_TfHostFunction* vm_getResolvedImports(VM* vm);
+static inline uint16_t* vm_getNamedImportArities(VM* vm);
 static void gc_createNextBucket(VM* vm, uint16_t bucketSize, uint16_t minBucketSize);
 static void gc_freeGCMemory(VM* vm);
 static Value vm_allocString(VM* vm, size_t sizeBytes, void** data);

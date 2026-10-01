@@ -1,31 +1,32 @@
-Bytecode size: 430 B
+Bytecode size: 438 B
 
 Addr    Size
 ==== =======
 0000   1c  - # Header
-0000       1     bytecodeVersion: 8
+0000       1     bytecodeVersion: 9
 0001       1     headerSize: 28
 0002       1     requiredEngineVersion: 0
-0003       1     reserved: 0
-0004       2     bytecodeSize: 430
-0006       2     expectedCRC: 6153
-0008       4     requiredFeatureFlags: 3
-000c       2     BCS_IMPORT_TABLE: 001c
-000e       2     BCS_EXPORT_TABLE: 0020
-0010       2     BCS_SHORT_CALL_TABLE: 0024
-0012       2     BCS_BUILTINS: 0024
-0014       2     BCS_STRING_TABLE: 0032
-0016       2     BCS_ROM: 003a
-0018       2     BCS_GLOBALS: 0184
-001a       2     BCS_HEAP: 019a
+0003       1     numericOptions: 0
+0004       2     bytecodeSize: 438
+0006       2     expectedCRC: 2e42
+0008       2     requiredFeatureFlags: 3
+000a       2     BCS_IMPORT_TABLE: 001c
+000c       2     BCS_EXPORT_TABLE: 0020
+000e       2     BCS_SHORT_CALL_TABLE: 0024
+0010       2     BCS_BUILTINS: 0024
+0012       2     BCS_STRING_TABLE: 0032
+0014       2     BCS_ROM: 003a
+0016       2     BCS_FFI_TABLE: 0184
+0018       2     BCS_GLOBALS: 018c
+001a       2     BCS_HEAP: 01a2
 001c    4  - # Import Table
 001c       2     [0]: 3
 001e       2     [1]: 4
 0020    4  - # Export Table
 0020       4     [0]: &0068
 0024    e  - # Builtins
-0024       2     [BIN_INTERNED_STRINGS]: &0198
-0026       2     [BIN_ARRAY_PROTO]: &0194
+0024       2     [BIN_INTERNED_STRINGS]: &01a0
+0026       2     [BIN_ARRAY_PROTO]: &019c
 0028       2     [BIN_STR_PROTOTYPE]: undefined
 002a       2     [BIN_ASYNC_CONTINUE]: undefined
 002c       2     [BIN_ASYNC_CATCH_BLOCK]: undefined
@@ -247,30 +248,30 @@ Addr    Size
 0180       1             Pop(count 1)
 0181       1             Literal(lit undefined)
 0182       1             Return()
-0183       1 <unused>
-0184   16  - # Globals
-0184       2     [0]: &0050
-0186       2     [1]: &0054
-0188       2     [2]: 48
-018a       2     [3]: &019c
-018c       2     [4]: 102
-018e       2     [5]: &0084
-0190       2     [6]: &00f0
-0192       2     [7]: &015c
-0194       2     Handle: &01a2
-0196       2     Handle: deleted
-0198       2     Handle: undefined
-019a   14  - # GC allocations
-019a       2     Header [Size: 4, Type: TC_REF_ARRAY]
-019c    4  -     # TsArray
-019c       2         dpData: &01ac
-019e       2         viLength: 1
-01a0       2     Header [Size: 8, Type: TC_REF_PROPERTY_LIST]
-01a2    8  -     # TsPropertyList
-01a2       2         dpNext: null
-01a4       2         dpProto: null
-01a6       2         key: &003c
-01a8       2         value: &0058
-01aa       2     Header [Size: 2, Type: TC_REF_FIXED_LENGTH_ARRAY]
-01ac    2  -     # TsFixedLengthArray
-01ac       2         [0]: 0
+0183       9 <unused>
+018c   16  - # Globals
+018c       2     [0]: &0050
+018e       2     [1]: &0054
+0190       2     [2]: 48
+0192       2     [3]: &01a4
+0194       2     [4]: 102
+0196       2     [5]: &0084
+0198       2     [6]: &00f0
+019a       2     [7]: &015c
+019c       2     Handle: &01aa
+019e       2     Handle: deleted
+01a0       2     Handle: undefined
+01a2   14  - # GC allocations
+01a2       2     Header [Size: 4, Type: TC_REF_ARRAY]
+01a4    4  -     # TsArray
+01a4       2         dpData: &01b4
+01a6       2         viLength: 1
+01a8       2     Header [Size: 8, Type: TC_REF_PROPERTY_LIST]
+01aa    8  -     # TsPropertyList
+01aa       2         dpNext: null
+01ac       2         dpProto: null
+01ae       2         key: &003c
+01b0       2         value: &0058
+01b2       2     Header [Size: 2, Type: TC_REF_FIXED_LENGTH_ARRAY]
+01b4    2  -     # TsFixedLengthArray
+01b4       2         [0]: 0

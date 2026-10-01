@@ -54,6 +54,7 @@ export function pass3_computeSlotAccessors(state: AnalysisState) {
       case 'GlobalSlot': return slot;
       case 'ArgumentSlot': return slot;
       case 'ModuleImportExportSlot': return slot;
+      case 'NamedFFIImportSlot': return slot;
       case 'ClosureSlot': {
         // Start at the nearest scope and work backwards
         let scope = reference.nearestScope;

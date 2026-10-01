@@ -60,4 +60,5 @@ std::map<mvm_TeError, std::string> errorDescriptions = {
   { MVM_E_HEAP_CORRUPT, "Microvium's internal heap is not in a consistent state" },
   { MVM_E_CLASS_PROTOTYPE_MUST_BE_NULL_OR_OBJECT, "The prototype property of a class must be null or a plain object" },
   { MVM_E_UNINITIALIZED_GLOBAL, "A global variable was not set before it was used" },
+  { MVM_E_FFI_ABI_ERROR, "MVM_E_FFI_ABI_ERROR: Named FFI signature or binding does not match" },
 };

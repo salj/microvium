@@ -1443,8 +1443,7 @@ function func3() {
     AsyncStart(count 3, flag true);      // 3                 ./test/end-to-end/tests/async-await-basic.test.mvm.js:382:7
     LoadScoped(index 21);                // 4  x              ./test/end-to-end/tests/async-await-basic.test.mvm.js:383:9
     LoadVar(index 3);                    // 5                 ./test/end-to-end/tests/async-await-basic.test.mvm.js:383:9
-    Literal(lit 1);                      // 6                 ./test/end-to-end/tests/async-await-basic.test.mvm.js:383:9
-    BinOp(op '+');                       // 5                 ./test/end-to-end/tests/async-await-basic.test.mvm.js:383:9
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 5  ./test/end-to-end/tests/async-await-basic.test.mvm.js:383:9
     LoadVar(index 4);                    // 6                 ./test/end-to-end/tests/async-await-basic.test.mvm.js:383:9
     StoreScoped(index 21);               // 5  x              ./test/end-to-end/tests/async-await-basic.test.mvm.js:383:9
     Pop(count 1);                        // 4                 ./test/end-to-end/tests/async-await-basic.test.mvm.js:383:9
@@ -1457,8 +1456,7 @@ function func3() {
     Pop(count 1);                        // 3                 ./test/end-to-end/tests/async-await-basic.test.mvm.js:384:9
     LoadScoped(index 21);                // 4  x              ./test/end-to-end/tests/async-await-basic.test.mvm.js:385:9
     LoadVar(index 3);                    // 5                 ./test/end-to-end/tests/async-await-basic.test.mvm.js:385:9
-    Literal(lit 1);                      // 6                 ./test/end-to-end/tests/async-await-basic.test.mvm.js:385:9
-    BinOp(op '+');                       // 5                 ./test/end-to-end/tests/async-await-basic.test.mvm.js:385:9
+    NumericUnOp(op '++', numeric type 'f64' (default context)); // 5  ./test/end-to-end/tests/async-await-basic.test.mvm.js:385:9
     LoadVar(index 4);                    // 6                 ./test/end-to-end/tests/async-await-basic.test.mvm.js:385:9
     StoreScoped(index 21);               // 5  x              ./test/end-to-end/tests/async-await-basic.test.mvm.js:385:9
     Pop(count 1);                        // 4                 ./test/end-to-end/tests/async-await-basic.test.mvm.js:385:9

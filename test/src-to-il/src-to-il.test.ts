@@ -3,7 +3,7 @@ import { stringifyUnit } from "../../lib/stringify-il";
 import * as fs from 'fs';
 import { srcToIlFilenames } from "./filenames";
 import { assertSameCode } from "../common";
-import { writeTextFile } from "../../lib/utils";
+import { writeTextFile } from "../../lib/node-io";
 
 suite('src-to-il', function () {
   test('Empty unit', () => {

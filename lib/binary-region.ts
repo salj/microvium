@@ -1,8 +1,6 @@
 import { hardAssert, invalidOperation, unexpected, stringifyStringLiteral } from "./utils";
 import { VisualBuffer, Format, BinaryData, HTML, HTMLFormat, BinaryFormat, VisualBufferHTMLContainer } from "./visual-buffer";
 import { EventEmitter } from "events";
-import { TraceFile } from "./trace-file";
-import { htmlPageTemplate } from "./general";
 
 export type FutureLike<T> = T | Future<T>;
 
@@ -11,12 +9,8 @@ export type FutureLike<T> = T | Future<T>;
 // (`Future` values)
 export class BinaryRegion {
   private _segments = new Array<Segment>();
-  private _traceFile: TraceFile | undefined;
 
-  constructor (private htmlTemplate?: VisualBufferHTMLContainer, traceFilename?: string) {
-    this._traceFile = traceFilename !== undefined ? new TraceFile(traceFilename) : undefined;
-    this.traceDump();
-  }
+  constructor (private htmlTemplate?: VisualBufferHTMLContainer) {}
 
   public append<T>(value: FutureLike<T>, label: string | undefined, format: Format<Labelled<T | undefined>>) {
     if (value instanceof Future) {
@@ -98,11 +92,6 @@ export class BinaryRegion {
 
   private appendSegment(item: Segment) {
     this._segments.push(item);
-    this.traceDump();
-  }
-
-  private traceDump() {
-    this._traceFile && this._traceFile.dump(() => htmlPageTemplate(this.toHTML()))
   }
 
   private appendDirect<T>(value: T, label: string | undefined, format: Format<Labelled<T | undefined>>) {

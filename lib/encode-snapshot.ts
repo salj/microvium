@@ -18,6 +18,7 @@ import { SnapshotReconstructionInfo } from './decode-snapshot';
 import { stringifyValue } from './stringify-il';
 import { CallInfo, InstructionEmitContext, FutureInstructionSourceMapping, writeFunctionBody } from './encode-snapshot-function-body';
 import { SourceMap } from './source-map';
+import { encodeFFIMetadata } from './ffi';
 
 export function encodeSnapshot(snapshot: SnapshotIL, generateDebugHTML: boolean, generateSourceMap: boolean): {
   snapshot: SnapshotClass,
@@ -72,6 +73,7 @@ export function encodeSnapshot(snapshot: SnapshotIL, generateDebugHTML: boolean,
   const importTable = new BinaryRegion();
   const largePrimitives = new BinaryRegion();
   const handlesRegion = new BinaryRegion();
+  const ffiMetadata = encodeFFIMetadata(snapshot.namedImports ?? [], snapshot.namedExports ?? []);
 
   const largePrimitivesMemoizationTable = new Array<{ data: Buffer, reference: Future<mvm_Value> }>();
   const importLookup = new Map<IL.HostFunctionID, number>();
@@ -95,6 +97,7 @@ export function encodeSnapshot(snapshot: SnapshotIL, generateDebugHTML: boolean,
   const sectionWriters: Record<mvm_TeBytecodeSection, SectionWriter> = {
     [mvm_TeBytecodeSection.BCS_IMPORT_TABLE]: writeImportTable,
     [mvm_TeBytecodeSection.BCS_EXPORT_TABLE]: writeExportTable,
+    [mvm_TeBytecodeSection.BCS_FFI_TABLE]: writeFFITable,
     [mvm_TeBytecodeSection.BCS_SHORT_CALL_TABLE]: writeShortCallTable,
     [mvm_TeBytecodeSection.BCS_BUILTINS]: writeBuiltins,
     [mvm_TeBytecodeSection.BCS_STRING_TABLE]: writeStringTable,
@@ -137,6 +140,9 @@ export function encodeSnapshot(snapshot: SnapshotIL, generateDebugHTML: boolean,
     requiredFeatureFlags |= 1 << flag;
   }
   const usesNumericTypes = snapshot.flags.has(IL.ExecutionFlag.NumericTypes);
+  if (requiredFeatureFlags > 0xFFFF) {
+    return invalidOperation('Snapshot feature flags exceed the 16-bit v9 header field');
+  }
   if (snapshot.numericOptions.defaultFloatWidth === 32 && !usesNumericTypes) {
     return invalidOperation('An f32 default requires the numeric-types snapshot feature');
   }
@@ -160,7 +166,7 @@ export function encodeSnapshot(snapshot: SnapshotIL, generateDebugHTML: boolean,
   bytecode.append(bytecode.postProcess(crcRangeStart, crcRangeEnd, crc16ccitt), 'crc', formats.uHex16LERow);
   crcRangeStart.assign(bytecode.currentOffset);
 
-  bytecode.append(requiredFeatureFlags, 'requiredFeatureFlags', formats.uHex32LERow);
+  bytecode.append(requiredFeatureFlags, 'requiredFeatureFlags', formats.uHex16LERow);
 
   // Section Offsets
   for (const [index, offset] of sectionOffsets.entries()) {
@@ -929,6 +935,10 @@ export function encodeSnapshot(snapshot: SnapshotIL, generateDebugHTML: boolean,
       bytecode.append(exportID, `Exports[${exportID}].ID`, formats.uInt16LERow);
       writeValue(bytecode, value, 'bytecode', `Exports[${exportID}].value`);
     }
+  }
+
+  function writeFFITable() {
+    bytecode.append(Buffer.from(ffiMetadata), 'Named FFI table', formats.bufferRow);
   }
 
   function writeShortCallTable() {

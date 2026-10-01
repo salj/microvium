@@ -1,41 +1,42 @@
-Bytecode size: 270 B
+Bytecode size: 278 B
 
 Addr    Size
 ==== =======
 0000   1c  - # Header
-0000       1     bytecodeVersion: 8
+0000       1     bytecodeVersion: 9
 0001       1     headerSize: 28
-0002       1     requiredEngineVersion: 0
-0003       1     reserved: 0
-0004       2     bytecodeSize: 270
-0006       2     expectedCRC: d879
-0008       4     requiredFeatureFlags: 3
-000c       2     BCS_IMPORT_TABLE: 001c
-000e       2     BCS_EXPORT_TABLE: 001e
-0010       2     BCS_SHORT_CALL_TABLE: 0026
-0012       2     BCS_BUILTINS: 0026
-0014       2     BCS_STRING_TABLE: 0034
-0016       2     BCS_ROM: 0038
-0018       2     BCS_GLOBALS: 00ca
-001a       2     BCS_HEAP: 00da
+0002       1     requiredEngineVersion: 1
+0003       1     numericOptions: 0
+0004       2     bytecodeSize: 278
+0006       2     expectedCRC: fc69
+0008       2     requiredFeatureFlags: 7
+000a       2     BCS_IMPORT_TABLE: 001c
+000c       2     BCS_EXPORT_TABLE: 001e
+000e       2     BCS_SHORT_CALL_TABLE: 0026
+0010       2     BCS_BUILTINS: 0026
+0012       2     BCS_STRING_TABLE: 0034
+0014       2     BCS_ROM: 0038
+0016       2     BCS_FFI_TABLE: 00cc
+0018       2     BCS_GLOBALS: 00d4
+001a       2     BCS_HEAP: 00e2
 001c    2  - # Import Table
 001c       2     [0]: 0
 001e    8  - # Export Table
 001e       4     [0]: &0080
-0022       4     [1]: &00d0
+0022       4     [1]: &00d8
 0026    e  - # Builtins
-0026       2     [BIN_INTERNED_STRINGS]: &00d8
+0026       2     [BIN_INTERNED_STRINGS]: &00e0
 0028       2     [BIN_ARRAY_PROTO]: undefined
 002a       2     [BIN_STR_PROTOTYPE]: undefined
 002c       2     [BIN_ASYNC_CONTINUE]: &005c
 002e       2     [BIN_ASYNC_CATCH_BLOCK]: &0068
 0030       2     [BIN_ASYNC_HOST_CALLBACK]: &0070
-0032       2     [BIN_PROMISE_PROTOTYPE]: &00d4
+0032       2     [BIN_PROMISE_PROTOTYPE]: &00dc
 0034    4  - # String Table
 0034       2     [0]: &003c
 0036       2     [1]: &004c
 0038       2 <unused>
-003a   90  - # ROM allocations
+003a   91  - # ROM allocations
 003a       2     Header [Size: 13, Type: TC_REF_INTERNED_STRING]
 003c       d     Value: 'Compile time'
 0049       1     <unused>
@@ -85,7 +86,7 @@ Addr    Size
 007b       2             AsyncComplete
 007d       1     <unused>
 007e       2     Header [Size: 8, Type: TC_REF_FUNCTION]
-0080   4a  -     # Function setup
+0080   4b  -     # Function setup
 0080       0         maxStackDepth: 8
 0080       0         isContinuation: 0
 0080   22  -         # Block entry
@@ -109,7 +110,7 @@ Addr    Size
 00a3       1             Literal(lit undefined)
 00a4       2             AsyncReturn
 00a6       2         <unused>
-00a8   22  -         # Block block1
+00a8   23  -         # Block block1
 00a8       3             LoadGlobal [1]
 00ab       1             Literal(lit undefined)
 00ac       3             Literal(&004c)
@@ -120,56 +121,55 @@ Addr    Size
 00b6       2             Call(count 2, flag true)
 00b8       1             LoadVar(index 3)
 00b9       1             LoadVar(index 5)
-00ba       1             Literal(lit 1)
-00bb       1             BinOp(op '+')
-00bc       1             LoadVar(index 6)
-00bd       1             StoreVar(index 3)
-00be       1             Pop(count 1)
+00ba       3             NumericUnOp(++, f64, default)
+00bd       1             LoadVar(index 6)
+00be       1             StoreVar(index 3)
 00bf       1             Pop(count 1)
-00c0       3             LoadGlobal [1]
-00c3       1             Literal(lit undefined)
-00c4       1             LoadVar(index 3)
-00c5       2             Call(count 2, flag true)
-00c7       1             Pop(count 1)
-00c8       2             Jump &00a2
-00ca   10  - # Globals
-00ca       2     [0]: &00ea
-00cc       2     [1]: &0058
-00ce       2     [2]: deleted
-00d0       2     Handle: &00f4
-00d2       2     Handle: deleted
-00d4       2     Handle: &00dc
-00d6       2     Handle: deleted
-00d8       2     Handle: undefined
-00da   34  - # GC allocations
-00da       2     Header [Size: 12, Type: TC_REF_PROPERTY_LIST]
-00dc    c  -     # TsPropertyList
-00dc       2         dpNext: null
-00de       2         dpProto: null
-00e0       2         key: -8192
-00e2       2         value: 2
-00e4       2         key: -1
-00e6       2         value: undefined
-00e8       2     Header [Size: 8, Type: TC_REF_PROPERTY_LIST]
-00ea    8  -     # TsPropertyList
-00ea       2         dpNext: null
-00ec       2         dpProto: &00dc
-00ee       2         key: -1
-00f0       2         value: &00fa
-00f2       2     Header [Size: 4, Type: TC_REF_CLOSURE]
-00f4    4  -     # TsClosure
-00f4       2         closure[0]: &0078
-00f6       2         closure[1]: &00ea
-00f8       2     Header [Size: 10, Type: TC_REF_CLOSURE]
-00fa    a  -     # TsClosure
-00fa       2         closure[0]: &009c
-00fc       2         closure[1]: &0106
-00fe       2         closure[2]: 1
-0100       2         closure[3]: -3
-0102       2         closure[4]: &00a8
-0104       2     Header [Size: 8, Type: TC_REF_PROPERTY_LIST]
-0106    8  -     # TsPropertyList
-0106       2         dpNext: null
-0108       2         dpProto: &00dc
-010a       2         key: -1
-010c       2         value: undefined
+00c0       1             Pop(count 1)
+00c1       3             LoadGlobal [1]
+00c4       1             Literal(lit undefined)
+00c5       1             LoadVar(index 3)
+00c6       2             Call(count 2, flag true)
+00c8       1             Pop(count 1)
+00c9       2             Jump &00a2
+00cb       9 <unused>
+00d4    e  - # Globals
+00d4       2     [0]: &00f2
+00d6       2     [1]: &0058
+00d8       2     Handle: &00fc
+00da       2     Handle: deleted
+00dc       2     Handle: &00e4
+00de       2     Handle: deleted
+00e0       2     Handle: undefined
+00e2   34  - # GC allocations
+00e2       2     Header [Size: 12, Type: TC_REF_PROPERTY_LIST]
+00e4    c  -     # TsPropertyList
+00e4       2         dpNext: null
+00e6       2         dpProto: null
+00e8       2         key: -8192
+00ea       2         value: 2
+00ec       2         key: -1
+00ee       2         value: undefined
+00f0       2     Header [Size: 8, Type: TC_REF_PROPERTY_LIST]
+00f2    8  -     # TsPropertyList
+00f2       2         dpNext: null
+00f4       2         dpProto: &00e4
+00f6       2         key: -1
+00f8       2         value: &0102
+00fa       2     Header [Size: 4, Type: TC_REF_CLOSURE]
+00fc    4  -     # TsClosure
+00fc       2         closure[0]: &0078
+00fe       2         closure[1]: &00f2
+0100       2     Header [Size: 10, Type: TC_REF_CLOSURE]
+0102    a  -     # TsClosure
+0102       2         closure[0]: &009c
+0104       2         closure[1]: &010e
+0106       2         closure[2]: 1
+0108       2         closure[3]: -3
+010a       2         closure[4]: &00a8
+010c       2     Header [Size: 8, Type: TC_REF_PROPERTY_LIST]
+010e    8  -     # TsPropertyList
+010e       2         dpNext: null
+0110       2         dpProto: &00e4
+0112       2         key: -1
+0114       2         value: undefined

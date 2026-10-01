@@ -1,29 +1,30 @@
-Bytecode size: 446 B
+Bytecode size: 454 B
 
 Addr    Size
 ==== =======
 0000   1c  - # Header
-0000       1     bytecodeVersion: 8
+0000       1     bytecodeVersion: 9
 0001       1     headerSize: 28
 0002       1     requiredEngineVersion: 0
-0003       1     reserved: 0
-0004       2     bytecodeSize: 446
-0006       2     expectedCRC: 8354
-0008       4     requiredFeatureFlags: 3
-000c       2     BCS_IMPORT_TABLE: 001c
-000e       2     BCS_EXPORT_TABLE: 001e
-0010       2     BCS_SHORT_CALL_TABLE: 0022
-0012       2     BCS_BUILTINS: 0022
-0014       2     BCS_STRING_TABLE: 0030
-0016       2     BCS_ROM: 0030
-0018       2     BCS_GLOBALS: 01a8
-001a       2     BCS_HEAP: 01ae
+0003       1     numericOptions: 0
+0004       2     bytecodeSize: 454
+0006       2     expectedCRC: 5e54
+0008       2     requiredFeatureFlags: 3
+000a       2     BCS_IMPORT_TABLE: 001c
+000c       2     BCS_EXPORT_TABLE: 001e
+000e       2     BCS_SHORT_CALL_TABLE: 0022
+0010       2     BCS_BUILTINS: 0022
+0012       2     BCS_STRING_TABLE: 0030
+0014       2     BCS_ROM: 0030
+0016       2     BCS_FFI_TABLE: 01a8
+0018       2     BCS_GLOBALS: 01b0
+001a       2     BCS_HEAP: 01b6
 001c    2  - # Import Table
 001c       2     [0]: 3
 001e    4  - # Export Table
 001e       4     [0]: &004c
 0022    e  - # Builtins
-0022       2     [BIN_INTERNED_STRINGS]: &01ac
+0022       2     [BIN_INTERNED_STRINGS]: &01b4
 0024       2     [BIN_ARRAY_PROTO]: undefined
 0026       2     [BIN_STR_PROTOTYPE]: undefined
 0028       2     [BIN_ASYNC_CONTINUE]: undefined
@@ -35,7 +36,7 @@ Addr    Size
 0032       2     Header [Size: 4, Type: TC_REF_INT32]
 0034       4     Value: 2147483644
 0038       2     <unused>
-003a       2     Header [Size: 8, Type: TC_REF_FLOAT64]
+003a       2     Header [Size: 8, Type: TC_REF_NUMBER]
 003c       8     Value: 4294967292
 0044       2     <unused>
 0046       2     Header [Size: 2, Type: TC_REF_HOST_FUNC]
@@ -234,8 +235,9 @@ Addr    Size
 01a2    6  -         # Block 01a2
 01a2       3             Literal(&003c)
 01a5       3             Jump &00fe
-01a8    6  - # Globals
-01a8       2     [0]: &0048
-01aa       2     [1]: true
-01ac       2     Handle: undefined
-01ae      10 <unused>
+01a8       8 <unused>
+01b0    6  - # Globals
+01b0       2     [0]: &0048
+01b2       2     [1]: true
+01b4       2     Handle: undefined
+01b6      10 <unused>

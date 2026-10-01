@@ -23,12 +23,12 @@
           </a>
         </td>
         <td class="data">
-          <span class="byte">08</span>
+          <span class="byte">09</span>
         </td>
         <td class="label">
-          bytecodeVersion: 
+          bytecodeVersion:
         </td>
-        <td class="value">8</td>
+        <td class="value">9</td>
       </tr>
 
       <tr>
@@ -41,7 +41,7 @@
           <span class="byte">1C</span>
         </td>
         <td class="label">
-          headerSize: 
+          headerSize:
         </td>
         <td class="value">28</td>
       </tr>
@@ -56,7 +56,7 @@
           <span class="byte">00</span>
         </td>
         <td class="label">
-          requiredEngineVersion: 
+          requiredEngineVersion:
         </td>
         <td class="value">0</td>
       </tr>
@@ -71,7 +71,7 @@
           <span class="byte">00</span>
         </td>
         <td class="label">
-          reserved: 
+          numericOptions:
         </td>
         <td class="value">0</td>
       </tr>
@@ -83,12 +83,12 @@
           </a>
         </td>
         <td class="data">
-          <span class="byte">2E</span><wbr><span class="byte">00</span>
+          <span class="byte">36</span><wbr><span class="byte">00</span>
         </td>
         <td class="label">
-          bytecodeSize: 
+          bytecodeSize:
         </td>
-        <td class="value">46</td>
+        <td class="value">54</td>
       </tr>
 
       <tr>
@@ -98,12 +98,12 @@
           </a>
         </td>
         <td class="data">
-          <span class="byte">50</span><wbr><span class="byte">10</span>
+          <span class="byte">D0</span><wbr><span class="byte">89</span>
         </td>
         <td class="label">
-          crc: 
+          crc:
         </td>
-        <td class="value">0x1050</td>
+        <td class="value">0x89D0</td>
       </tr>
 
       <tr>
@@ -113,12 +113,27 @@
           </a>
         </td>
         <td class="data">
-          <span class="byte">03</span><wbr><span class="byte">00</span><wbr><span class="byte">00</span><wbr><span class="byte">00</span>
+          <span class="byte">03</span><wbr><span class="byte">00</span>
         </td>
         <td class="label">
-          requiredFeatureFlags: 
+          requiredFeatureFlags:
         </td>
-        <td class="value">0x00000003</td>
+        <td class="value">0x0003</td>
+      </tr>
+
+      <tr>
+        <td class="address">
+          <a class="address-text" id="address000A" href="#address000A">
+            000A
+          </a>
+        </td>
+        <td class="data">
+          <span class="byte">1C</span><wbr><span class="byte">00</span>
+        </td>
+        <td class="label">
+          sectionOffsets[BCS_IMPORT_TABLE]:
+        </td>
+        <td class="value">0x001C</td>
       </tr>
 
       <tr>
@@ -131,7 +146,7 @@
           <span class="byte">1C</span><wbr><span class="byte">00</span>
         </td>
         <td class="label">
-          sectionOffsets[BCS_IMPORT_TABLE]: 
+          sectionOffsets[BCS_EXPORT_TABLE]:
         </td>
         <td class="value">0x001C</td>
       </tr>
@@ -146,7 +161,7 @@
           <span class="byte">1C</span><wbr><span class="byte">00</span>
         </td>
         <td class="label">
-          sectionOffsets[BCS_EXPORT_TABLE]: 
+          sectionOffsets[BCS_SHORT_CALL_TABLE]:
         </td>
         <td class="value">0x001C</td>
       </tr>
@@ -161,7 +176,7 @@
           <span class="byte">1C</span><wbr><span class="byte">00</span>
         </td>
         <td class="label">
-          sectionOffsets[BCS_SHORT_CALL_TABLE]: 
+          sectionOffsets[BCS_BUILTINS]:
         </td>
         <td class="value">0x001C</td>
       </tr>
@@ -173,12 +188,12 @@
           </a>
         </td>
         <td class="data">
-          <span class="byte">1C</span><wbr><span class="byte">00</span>
+          <span class="byte">2A</span><wbr><span class="byte">00</span>
         </td>
         <td class="label">
-          sectionOffsets[BCS_BUILTINS]: 
+          sectionOffsets[BCS_STRING_TABLE]:
         </td>
-        <td class="value">0x001C</td>
+        <td class="value">0x002A</td>
       </tr>
 
       <tr>
@@ -191,7 +206,7 @@
           <span class="byte">2A</span><wbr><span class="byte">00</span>
         </td>
         <td class="label">
-          sectionOffsets[BCS_STRING_TABLE]: 
+          sectionOffsets[BCS_ROM]:
         </td>
         <td class="value">0x002A</td>
       </tr>
@@ -206,7 +221,7 @@
           <span class="byte">2A</span><wbr><span class="byte">00</span>
         </td>
         <td class="label">
-          sectionOffsets[BCS_ROM]: 
+          sectionOffsets[BCS_FFI_TABLE]:
         </td>
         <td class="value">0x002A</td>
       </tr>
@@ -218,12 +233,12 @@
           </a>
         </td>
         <td class="data">
-          <span class="byte">2A</span><wbr><span class="byte">00</span>
+          <span class="byte">32</span><wbr><span class="byte">00</span>
         </td>
         <td class="label">
-          sectionOffsets[BCS_GLOBALS]: 
+          sectionOffsets[BCS_GLOBALS]:
         </td>
-        <td class="value">0x002A</td>
+        <td class="value">0x0032</td>
       </tr>
 
       <tr>
@@ -233,12 +248,12 @@
           </a>
         </td>
         <td class="data">
-          <span class="byte">2E</span><wbr><span class="byte">00</span>
+          <span class="byte">36</span><wbr><span class="byte">00</span>
         </td>
         <td class="label">
-          sectionOffsets[BCS_HEAP]: 
+          sectionOffsets[BCS_HEAP]:
         </td>
-        <td class="value">0x002E</td>
+        <td class="value">0x0036</td>
       </tr>
 
       <tr>
@@ -248,12 +263,12 @@
           </a>
         </td>
         <td class="data">
-          <span class="byte">2D</span><wbr><span class="byte">00</span>
+          <span class="byte">35</span><wbr><span class="byte">00</span>
         </td>
         <td class="label">
-          builtin[BIN_INTERNED_STRINGS]: 
+          builtin[BIN_INTERNED_STRINGS]:
         </td>
-        <td class="value">0x002D</td>
+        <td class="value">0x0035</td>
       </tr>
 
       <tr>
@@ -266,7 +281,7 @@
           <span class="byte">01</span><wbr><span class="byte">00</span>
         </td>
         <td class="label">
-          builtin[BIN_ARRAY_PROTO]: 
+          builtin[BIN_ARRAY_PROTO]:
         </td>
         <td class="value">0x0001</td>
       </tr>
@@ -281,7 +296,7 @@
           <span class="byte">01</span><wbr><span class="byte">00</span>
         </td>
         <td class="label">
-          builtin[BIN_STR_PROTOTYPE]: 
+          builtin[BIN_STR_PROTOTYPE]:
         </td>
         <td class="value">0x0001</td>
       </tr>
@@ -296,7 +311,7 @@
           <span class="byte">01</span><wbr><span class="byte">00</span>
         </td>
         <td class="label">
-          builtin[BIN_ASYNC_CONTINUE]: 
+          builtin[BIN_ASYNC_CONTINUE]:
         </td>
         <td class="value">0x0001</td>
       </tr>
@@ -311,7 +326,7 @@
           <span class="byte">01</span><wbr><span class="byte">00</span>
         </td>
         <td class="label">
-          builtin[BIN_ASYNC_CATCH_BLOCK]: 
+          builtin[BIN_ASYNC_CATCH_BLOCK]:
         </td>
         <td class="value">0x0001</td>
       </tr>
@@ -326,7 +341,7 @@
           <span class="byte">01</span><wbr><span class="byte">00</span>
         </td>
         <td class="label">
-          builtin[BIN_ASYNC_HOST_CALLBACK]: 
+          builtin[BIN_ASYNC_HOST_CALLBACK]:
         </td>
         <td class="value">0x0001</td>
       </tr>
@@ -341,7 +356,7 @@
           <span class="byte">01</span><wbr><span class="byte">00</span>
         </td>
         <td class="label">
-          builtin[BIN_PROMISE_PROTOTYPE]: 
+          builtin[BIN_PROMISE_PROTOTYPE]:
         </td>
         <td class="value">0x0001</td>
       </tr>
@@ -350,6 +365,21 @@
         <td class="address">
           <a class="address-text" id="address002A" href="#address002A">
             002A
+          </a>
+        </td>
+        <td class="data">
+          <span class="byte">00</span><wbr><span class="byte">00</span><wbr><span class="byte">00</span><wbr><span class="byte">00</span><wbr><span class="byte">00</span><wbr><span class="byte">00</span><wbr><span class="byte">00</span><wbr><span class="byte">00</span>
+        </td>
+        <td class="label">
+          Named FFI table:
+        </td>
+        <td class="value"><Buffer></td>
+      </tr>
+
+      <tr>
+        <td class="address">
+          <a class="address-text" id="address0032" href="#address0032">
+            0032
           </a>
         </td>
         <td class="data">
@@ -363,23 +393,23 @@
 
       <tr>
         <td class="address">
-          <a class="address-text" id="address002C" href="#address002C">
-            002C
+          <a class="address-text" id="address0034" href="#address0034">
+            0034
           </a>
         </td>
         <td class="data">
           <span class="byte">01</span><wbr><span class="byte">00</span>
         </td>
         <td class="label">
-          Handle: 
+          Handle:
         </td>
         <td class="value">0x0001</td>
       </tr>
       
       <tr>
         <td class="address">
-          <a class="address-text" id="address002E" href="#address002E">
-            002E
+          <a class="address-text" id="address0036" href="#address0036">
+            0036
           </a>
         </td>
         <td class="data">

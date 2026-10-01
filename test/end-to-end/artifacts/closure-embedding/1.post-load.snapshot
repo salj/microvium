@@ -23,8 +23,7 @@ function Array_push() {
 function anonymous() {
   entry:
     LoadScoped(index 1);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 0);
     StoreScoped(index 1);
     Return();
@@ -33,8 +32,7 @@ function anonymous() {
 function anonymous1() {
   entry:
     LoadScoped(index 3);
-    Literal(lit 1);
-    BinOp(op '-');
+    NumericUnOp(op '--', numeric type 'f64' (default context));
     LoadVar(index 0);
     StoreScoped(index 3);
     Return();
@@ -43,8 +41,7 @@ function anonymous1() {
 function anonymous2() {
   entry:
     LoadScoped(index 3);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 0);
     StoreScoped(index 3);
     Return();
@@ -61,8 +58,7 @@ function anonymous3() {
 function anonymous4() {
   entry:
     LoadScoped(index 1);
-    Literal(lit 1);
-    BinOp(op '-');
+    NumericUnOp(op '--', numeric type 'f64' (default context));
     LoadVar(index 0);
     StoreScoped(index 1);
     Return();
@@ -71,8 +67,7 @@ function anonymous4() {
 function anonymous5() {
   entry:
     LoadScoped(index 3);
-    Literal(lit 1);
-    BinOp(op '-');
+    NumericUnOp(op '--', numeric type 'f64' (default context));
     LoadVar(index 0);
     StoreScoped(index 3);
     Return();
@@ -120,8 +115,7 @@ function baz() {
 function decrement() {
   entry:
     LoadScoped(index 3);
-    Literal(lit 1);
-    BinOp(op '-');
+    NumericUnOp(op '--', numeric type 'f64' (default context));
     LoadVar(index 0);
     StoreScoped(index 3);
     Return();
@@ -131,8 +125,7 @@ function decrement() {
 function increment() {
   entry:
     LoadScoped(index 1);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 0);
     StoreScoped(index 1);
     Return();
@@ -329,8 +322,7 @@ function test_loop() {
     ScopePop();
     LoadVar(index 3);
     LoadVar(index 4);
-    Literal(lit 1);
-    BinOp(op '+');
+    NumericUnOp(op '++', numeric type 'f64' (default context));
     LoadVar(index 5);
     StoreVar(index 3);
     Pop(count 1);

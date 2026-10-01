@@ -253,7 +253,7 @@ suite('native-api', function () {
     assert.equal(vm.getInstructionCountRemaining(), 1000);
 
     vm.call(f, []);
-    assert.equal(vm.getInstructionCountRemaining(), 340);
+    assert.equal(vm.getInstructionCountRemaining(), 390);
 
     let err: any;
     // Calling `f` again will trigger the error
@@ -268,4 +268,3 @@ suite('native-api', function () {
     assert.equal(err.message, "The instruction count set by `mvm_stopAfterNInstructions` has been reached");
   })
 })
-

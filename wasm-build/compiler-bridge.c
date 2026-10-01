@@ -5,7 +5,7 @@
 #include <string.h>
 #include <time.h>
 
-#include "compiler-bundle.h"
+#include "compiler-bytecode.h"
 
 static JSRuntime *runtime;
 static JSContext *context;
@@ -45,13 +45,17 @@ int mvm_init(void) {
   context = JS_NewContext(runtime);
   if (!context) return 2;
 
-  JSValue eval_result = JS_Eval(
+  JSValue eval_function = JS_ReadObject(
     context,
     mvm_compiler_bundle,
     sizeof(mvm_compiler_bundle) - 1,
-    "<microvium-compiler>",
-    JS_EVAL_TYPE_GLOBAL
+    JS_READ_OBJ_BYTECODE
   );
+  if (JS_IsException(eval_function)) {
+    set_exception();
+    return 3;
+  }
+  JSValue eval_result = JS_EvalFunction(context, eval_function);
   if (JS_IsException(eval_result)) {
     set_exception();
     return 3;

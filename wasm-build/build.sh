@@ -43,6 +43,7 @@ fi
   --gc-sections \
   --lto-O3 \
   --allow-undefined \
+  --strip-debug \
   --import-memory \
   --initial-memory=262144 \
   --max-memory=262144 \

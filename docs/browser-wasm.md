@@ -16,7 +16,9 @@ mise install
 
 The builds need Node.js, Clang, `wasm-ld`, and Emscripten (`emcc`). Python is
 needed by node-gyp when npm installs the native addon; neither WebAssembly
-build uses Python. Set `EMCC` if Emscripten is not on `PATH`.
+build uses Python. The compiler bytecode builder uses Clang as its host C
+compiler; set `HOST_CC` to select another one. Set `EMCC` if Emscripten is not
+on `PATH`.
 
 ## Build and run
 
@@ -32,10 +34,11 @@ Open <http://127.0.0.1:8000/>. The generated files under `dist-web/` are
 ignored by Git. The sample should report that host import `1` received `7` and
 export `1` returned `28`.
 
-The compiler WASM embeds the JavaScript compiler in QuickJS-NG. Its source is
-vendored under [`wasm-build/quickjs-ng`](../wasm-build/quickjs-ng), so the
-compiler build does not fetch a runner or require a WASI host. The wrapper
-passes source and snapshots directly through the WebAssembly memory buffer.
+The compiler WASM embeds source-free QuickJS-NG bytecode generated from the
+JavaScript compiler bundle. QuickJS-NG is vendored under
+[`wasm-build/quickjs-ng`](../wasm-build/quickjs-ng), so the compiler build does
+not fetch a runner or require a WASI host. The wrapper passes source and
+snapshots directly through the WebAssembly memory buffer.
 
 ## Verification
 

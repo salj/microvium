@@ -1,6 +1,6 @@
 #pragma once
 
-// Implement in JS
+// Resolved from the Emscripten sysroot and linked into the runtime module.
 extern double fmod(double x, double y);
 extern double pow(double x, double y);
 extern double ldexp(double x, int exponent);

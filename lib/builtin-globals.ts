@@ -1,6 +1,4 @@
 import { VirtualMachineFriendly } from "./virtual-machine-friendly";
-import fs from 'fs';
-import path from 'path';
 
 export function addBuiltinGlobals(vm: VirtualMachineFriendly, noLib: boolean = false) {
   // Note: There is also a VirtualMachine.addBuiltinGlobals which can be used
@@ -11,7 +9,15 @@ export function addBuiltinGlobals(vm: VirtualMachineFriendly, noLib: boolean = f
   // important but also the garbage collector will remove these if they aren't
   // used (which not true of Array.prototype since it's dynamically accessible)
 
-  const runtimeLibText = fs.readFileSync(path.join(__dirname, './runtime-library.mvm.js'), 'utf8');
+  const runtimeLibText = `
+    export function Number_isNaN(n) {
+      return n !== n;
+    }
+
+    export function Array_push(value) {
+      this[this.length] = value;
+    }
+  `;
   const runtimeLib = vm.evaluateModule({ sourceText: runtimeLibText, debugFilename: '<builtin>' });
 
   const global = vm.globalThis;

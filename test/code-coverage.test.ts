@@ -1,6 +1,7 @@
 import { CoverageHitInfos, getCoveragePoints, updateCoverageMarkers } from '../lib/code-coverage-utils';
 import { NativeVM, CoverageCaseMode } from '../lib/native-vm';
-import { notUndefined, writeTextFile } from '../lib/utils';
+import { notUndefined } from '../lib/utils';
+import { writeTextFile } from '../lib/node-io';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';

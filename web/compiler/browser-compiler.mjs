@@ -1,37 +1,48 @@
-import { File, OpenFile, WASI } from '@bjorn3/browser_wasi_shim';
-
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 export class BrowserCompiler {
   constructor(moduleBytes) {
     this.moduleBytes = moduleBytes;
+    this.instancePromise = undefined;
   }
 
   async compile(sourceText) {
-    const stdin = new File(encoder.encode(sourceText), { readonly: true });
-    const stdout = new File(new Uint8Array(0));
-    const stderr = new File(new Uint8Array(0));
-    const wasi = new WASI(['microvium-compiler'], [], [
-      new OpenFile(stdin),
-      new OpenFile(stdout),
-      new OpenFile(stderr)
-    ]);
+    const instance = await this.getInstance();
+    const { exports } = instance;
+    const source = encoder.encode(sourceText);
+    const sourcePointer = exports.mvm_alloc(source.byteLength);
+    if (!sourcePointer && source.byteLength) throw new Error('Compiler could not allocate source buffer');
 
-    const { instance } = await WebAssembly.instantiate(this.moduleBytes, {
-      wasi_snapshot_preview1: wasi.wasiImport
-    });
-
-    let exitCode;
     try {
-      exitCode = wasi.start(instance);
-    } catch (error) {
-      const diagnostic = decoder.decode(stderr.data).trim();
-      throw new Error(diagnostic || String(error));
+      new Uint8Array(exports.memory.buffer, sourcePointer, source.byteLength).set(source);
+      const status = exports.mvm_compile(sourcePointer, source.byteLength);
+      if (status !== 0) throw this.readError(exports);
+
+      const resultSize = exports.mvm_result_size();
+      const resultPointer = exports.mvm_result_pointer();
+      if (!resultPointer && resultSize) throw new Error('Compiler returned an invalid snapshot buffer');
+      return new Uint8Array(exports.memory.buffer, resultPointer, resultSize).slice();
+    } finally {
+      exports.mvm_free(sourcePointer);
     }
-    if (exitCode !== 0) {
-      throw new Error(decoder.decode(stderr.data).trim() || `Compiler exited with status ${exitCode}`);
+  }
+
+  async getInstance() {
+    if (!this.instancePromise) {
+      this.instancePromise = WebAssembly.instantiate(this.moduleBytes, {}).then(({ instance }) => {
+        const status = instance.exports.mvm_init();
+        if (status !== 0) throw this.readError(instance.exports, `Compiler initialization failed with status ${status}`);
+        return instance;
+      });
     }
-    return stdout.data.slice();
+    return this.instancePromise;
+  }
+
+  readError(exports, fallback = 'Compiler failed without a diagnostic') {
+    const size = exports.mvm_error_size();
+    const pointer = exports.mvm_error_pointer();
+    const message = decoder.decode(new Uint8Array(exports.memory.buffer, pointer, size)).trim();
+    return new Error(message || fallback);
   }
 }

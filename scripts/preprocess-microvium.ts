@@ -5,7 +5,7 @@
  */
 
 import fs from 'fs-extra';
-import { writeTextFile } from '../lib/utils';
+import { writeTextFile } from '../lib/node-io';
 
 fs.mkdirpSync('./dist-c');
 let microviumC = fs.readFileSync('./native-vm/microvium.c', 'utf8');

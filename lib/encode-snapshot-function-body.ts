@@ -10,7 +10,6 @@ import { Format, BinaryData } from './visual-buffer';
 import * as formats from './snapshot-binary-html-formats';
 import escapeHTML from 'escape-html';
 import { vm_TeOpcode, vm_TeOpcodeEx1, vm_TeOpcodeEx2, vm_TeOpcodeEx3, vm_TeSmallLiteralValue, vm_TeNumberOp, vm_TeBitwiseOp, vm_TeOpcodeEx4 } from './bytecode-opcodes';
-import fs from 'fs';
 import { Referenceable, programAddressToKey } from './encode-snapshot';
 import { encodeNumericTypeDescriptor } from './numeric-types';
 
@@ -1348,39 +1347,6 @@ export type CallInfo = {
 };
 
 type HostFunctionIndex = number;
-
-// For debugging
-function dumpInstructionEmitData(
-  filename: string,
-  func: IL.Function,
-  blockOutputOrder: string[],
-  metaByOperation: Map<IL.Operation, OperationMeta>,
-  metaByBlock: Map<IL.BlockID, BlockMeta>,
-) {
-  const result: string[] = [];
-  result.push(`Function ${func.id} from ${func.sourceFilename}`)
-
-  for (const blockId of blockOutputOrder) {
-    const block = func.blocks[blockId];
-    const blockMeta = notUndefined(metaByBlock.get(blockId));
-    let line = `Block ${blockId}`;
-    if (blockMeta.address !== undefined) line = `${blockMeta.address.toString().padStart(4, '0')} ${line}`;
-    if (blockMeta.addressEstimate !== undefined) line += ` est ${blockMeta.addressEstimate}`;
-    if (blockMeta.paddingBeforeBlock !== undefined) line += ` ${blockMeta.paddingBeforeBlock ? 'padded' : 'not-padded'}`;
-    result.push(`  ${line}`);
-
-    for (const op of block.operations) {
-      const opMeta = notUndefined(metaByOperation.get(op));
-      line = `${op.opcode}`
-      if (opMeta.address !== undefined) line = `${opMeta.address.toString().padStart(4, '0')} ${line}`;
-      if (opMeta.addressEstimate !== undefined) line += ` est ${opMeta.addressEstimate}`;
-      if (op.sourceLoc !== undefined) line += ` ${formatSourceLoc(op.sourceLoc)}`;
-      result.push(`    ${line}`)
-    }
-  }
-
-  fs.writeFileSync(filename, result.join('\n'))
-}
 
 // Find blocks that need to be addressable. Blocks that need to be addressable
 // will be in the addressableReferences map. This will be the case when the

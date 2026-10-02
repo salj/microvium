@@ -70,13 +70,22 @@ Microvium implements a subset of the JavaScript language, so if a feature [exist
 
 ## Size
 
-The EmbedVM engine claims to be about 3kB in size. The Microvium engine is about 16kB when compiled to a 16-bit device, so it's significantly larger.
+The EmbedVM engine claims to be about 3kB in size. The current Microvium
+Cortex-M0 object measurement is 26,869 bytes with float support and int32
+overflow checks; it is not directly comparable to EmbedVM's reported figure.
+See [memory usage](../doc/native-host/memory-usage.md) for the build settings.
 
-While I have not measured it, an empty bytecode file for EmbedVM is likely to be smaller than for Microvium. An empty bytecode file in Microvium is about 64 bytes.
+While I have not measured it, an empty bytecode file for EmbedVM is likely to
+be smaller than for Microvium. The minimal Microvium snapshot in the current
+test is 50 bytes.
 
 While I have not measured it, more complicated scripts are likely to be more compact in Microvium than in EmbedVM since the engine is more powerful and can do more with a single instruction.
 
-EmbedVM does not have any implicit RAM usage (other than the C call stack when you call it), and instead it's up to you how much RAM you want to dedicate to it. Microvium dynamically scales the RAM usage according to what it needs, with a minimum of 20 bytes per virtual machine.
+EmbedVM does not have any implicit RAM usage (other than the C call stack when
+you call it), and instead it's up to you how much RAM you want to dedicate to
+it. Microvium gets per-VM state and managed heap memory from the host; see
+[memory usage](../doc/native-host/memory-usage.md) for current measurement
+details.
 
 See [memory-usage.md](./native-host/memory-usage.md) for more details.
 
@@ -85,6 +94,4 @@ See [memory-usage.md](./native-host/memory-usage.md) for more details.
 No scripting engine will likely be very performant on a microcontroller. For performance-critical tasks, it will likely be better to code natively.
 
 While I have not benchmarked it, Microvium is likely to be slower than EmbedVM for many types of scripts because Microvium is doing more work to manage dynamic typing and different memory spaces. Some tasks might be more efficient in Microvium because their representation in EmbedVM's limited feature set may be unwieldy.
-
-
 

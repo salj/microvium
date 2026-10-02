@@ -17,13 +17,17 @@ mJS say:
 
 I've verified that mJS compiles to [46,729 bytes of flash](../rubbish/2022-05-23-compiling-mjs/build.sh) when targeting an nRF52, which is an ARM Cortex M4 device (similar to the Cortex M0 that I've used for the size tests of Microvium).
 
-The last time I measured the size of Microvium, it uses about 8 to 16kB of flash space when compiled for a 32-bit ARM Cortex M0. This puts it about 3-6 times smaller than mJS.
+The current repository size check reports 26,869 bytes of `.text` for a
+Cortex-M0 `-Os` object build with float and int32 overflow checks enabled.
+This replaces the old 8-16 kB estimate. The mJS figure above is an older
+measurement from a different target, so the ratio is not a useful current
+comparison. See [memory usage](../doc/native-host/memory-usage.md) for the
+configuration and limits of the Microvium measurement.
 
-In terms of RAM, Microvium uses 36B of RAM per VM, plus whatever heap memory the VM uses and whatever VM stack size you configure (the default stack size is 256B).
-
-The default 256B stack size in Microvium is roughly the equivalent room to a 1kB stack size in mJS since Microvium slots are a quarter of the size (see next section).
-
-The stack and virtual registers are only allocated while the VM is actively running a function, so the space can be used by the rest of the firmware when the VM is idle. The minimum idle RAM required by a VM is actually only 22B.
+Per-VM RAM depends on globals, imports, active stack, and managed heap. The
+example port configures a 256-byte stack. Stack and register memory are freed
+when a VM call returns. Use `mvm_getMemoryStats` to inspect current and peak
+usage; the old fixed 36 B and 22 B claims are not current sizing guarantees.
 
 See [size-tests.md](../size-test/size-tests.md) and [memory-usage.md](../doc/native-host/memory-usage.md).
 

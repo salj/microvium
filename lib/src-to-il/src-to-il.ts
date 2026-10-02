@@ -2809,11 +2809,9 @@ export function compilingEndOfNode(cur: Cursor, node: B.Node) {
 
 export function compileVariableDeclaration(cur: Cursor, decl: B.VariableDeclaration) {
   /*
-  Note: variable declarations are non-compliant in Microvium. A declaration like
-  ` var x = 5;` is compiled just `Literal(5)`, which leaves the value `5` at the
-  top of the stack as the variable slot. This is non-compliant because it means
-  local variable slots don't exist before their declaration (violates TDZ
-  rules).
+  Scope analysis allocates and initializes declaration slots in the scope
+  prologue. This function emits the initializer store at the declaration's
+  source position; it does not allocate the slot.
   */
   for (const d of decl.declarations) {
     compilingNode(cur, d);

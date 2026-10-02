@@ -1,0 +1,154 @@
+[this module slot] 'thisModule'
+[free var] 'vmExport'; [free var] 'assertEqual'
+[global slot] 'thisModule'
+
+module with entry 'moduleEntry' {
+  [no closure scope]; [0 var declarations]
+
+  bindings { function 'run' # binding_1 @ local[0] }
+
+  references { vmExport @ free vmExport; run @ binding_1 }
+
+  prologue { func 'run' -> local[0] }
+
+  function run as 'run' {
+    [no closure scope]; [0 var declarations]
+
+    bindings { this '#this' # binding_2 @ arg[0] }
+
+    No references
+
+    prologue {  }
+
+    block {
+      sameInstanceCountAsParent: true; [no closure scope]
+
+      bindings {
+        writable let 'i' # binding_3 @ local[0];
+        writable let 'j' # binding_4 @ local[1];
+        writable let 'k' # binding_5 @ local[2];
+        writable let 'm' # binding_6 @ local[3]
+      }
+
+      prologue {
+        new let -> local[0]
+        new let -> local[1]
+        new let -> local[2]
+        new let -> local[3]
+      }
+
+      epilogue { Pop(4) }
+
+      references {
+        assertEqual @ free assertEqual
+        i @ binding_3
+        assertEqual @ free assertEqual
+        j @ binding_4
+        assertEqual @ free assertEqual
+        k @ binding_5
+        assertEqual @ free assertEqual
+        m @ binding_6
+      }
+
+      block {
+        sameInstanceCountAsParent: false; [no closure scope]
+
+        bindings {  }
+
+        prologue {  }
+
+        epilogue {  }
+
+        references { i @ binding_3; i @ binding_3 }
+
+        block {
+          sameInstanceCountAsParent: false
+          [no closure scope]
+
+          bindings {  }
+
+          prologue {  }
+
+          epilogue {  }
+
+          No references
+        }
+      }
+
+      block {
+        sameInstanceCountAsParent: false; [no closure scope]
+
+        bindings {  }
+
+        prologue {  }
+
+        epilogue {  }
+
+        references { j @ binding_4 }
+
+        block {
+          sameInstanceCountAsParent: false
+          [no closure scope]
+
+          bindings {  }
+
+          prologue {  }
+
+          epilogue {  }
+
+          references { j @ binding_4 }
+        }
+      }
+
+      block {
+        sameInstanceCountAsParent: false; [no closure scope]
+
+        bindings {  }
+
+        prologue {  }
+
+        epilogue {  }
+
+        references { k @ binding_5; k @ binding_5 }
+
+        block {
+          sameInstanceCountAsParent: false
+          [no closure scope]
+
+          bindings {  }
+
+          prologue {  }
+
+          epilogue {  }
+
+          references { k @ binding_5 }
+        }
+      }
+
+      block {
+        sameInstanceCountAsParent: false; [no closure scope]
+
+        bindings {  }
+
+        prologue {  }
+
+        epilogue {  }
+
+        No references
+
+        block {
+          sameInstanceCountAsParent: false
+          [no closure scope]
+
+          bindings {  }
+
+          prologue {  }
+
+          epilogue {  }
+
+          references { m @ binding_6; m @ binding_6 }
+        }
+      }
+    }
+  }
+}

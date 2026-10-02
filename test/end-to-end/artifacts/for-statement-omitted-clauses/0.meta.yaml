@@ -1,0 +1,4 @@
+runExportedFunction: 0
+description: Supports omitted initializer, test, and update parts of for loops
+assertionCount: 4
+dontCompareDisassembly: true

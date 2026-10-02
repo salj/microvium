@@ -5764,6 +5764,26 @@ TeError mvm_resolveExports(VM* vm, const mvm_VMExportID* idTable, Value* resultT
   return err;
 }
 
+mvm_TeError mvm_getExportCount(mvm_VM* vm, uint16_t* out_count) {
+  if (!vm || !out_count) return MVM_E_INVALID_ARGUMENTS;
+  uint16_t tableSize = getSectionSize((VM*)vm, BCS_EXPORT_TABLE);
+  if (tableSize % sizeof(vm_TsExportTableEntry) != 0) return MVM_E_INVALID_BYTECODE;
+  *out_count = tableSize / sizeof(vm_TsExportTableEntry);
+  return MVM_E_SUCCESS;
+}
+
+mvm_TeError mvm_getExportID(mvm_VM* vm, uint16_t index, mvm_VMExportID* out_id) {
+  if (!vm || !out_id) return MVM_E_INVALID_ARGUMENTS;
+  uint16_t count;
+  mvm_TeError error = mvm_getExportCount(vm, &count);
+  if (error != MVM_E_SUCCESS) return error;
+  if (index >= count) return MVM_E_INVALID_ARGUMENTS;
+  LongPtr entry = getBytecodeSection((VM*)vm, BCS_EXPORT_TABLE, NULL);
+  while (index--) entry = LongPtr_add(entry, sizeof(vm_TsExportTableEntry));
+  *out_id = LongPtr_read2_aligned(entry);
+  return MVM_E_SUCCESS;
+}
+
 #if MVM_SAFE_MODE
 static bool vm_isHandleInitialized(VM* vm, const mvm_Handle* handle) {
   CODE_COVERAGE(22); // Hit
@@ -5814,6 +5834,106 @@ TeError mvm_releaseHandle(VM* vm, mvm_Handle* handle) {
   handle->_value = VM_VALUE_UNDEFINED;
   handle->_next = NULL;
   return vm_newError(vm, MVM_E_INVALID_HANDLE);
+}
+
+mvm_TeError mvm_newArray(mvm_VM* vm, mvm_Handle* out_array) {
+  if (!vm || !out_array) return MVM_E_INVALID_ARGUMENTS;
+#if MVM_SAFE_MODE
+  if (!vm_isHandleInitialized(vm, out_array)) return MVM_E_INVALID_HANDLE;
+#endif
+  mvm_handleSet(out_array, vm_newArray(vm, 0));
+  return MVM_E_SUCCESS;
+}
+
+mvm_TeError mvm_arrayPush(mvm_VM* vm, mvm_Handle* array, mvm_Handle* value) {
+  if (!vm || !array || !value) return MVM_E_INVALID_ARGUMENTS;
+#if MVM_SAFE_MODE
+  if (!vm_isHandleInitialized(vm, array) || !vm_isHandleInitialized(vm, value)) return MVM_E_INVALID_HANDLE;
+#endif
+  if (mvm_typeOf(vm, mvm_handleGet(array)) != VM_T_ARRAY) return MVM_E_TYPE_ERROR;
+  uint16_t length;
+  mvm_TeError error = mvm_getArrayLength(vm, mvm_handleGet(array), &length);
+  if (error != MVM_E_SUCCESS) return error;
+  LongPtr arrayPointer = DynamicPtr_decode_long(vm, mvm_handleGet(array));
+  DynamicPtr dataPointer = READ_FIELD_2(arrayPointer, TsArray, dpData);
+  uint16_t capacity = dataPointer == VM_VALUE_NULL
+    ? 0
+    : (uint16_t)(vm_getAllocationSize(DynamicPtr_decode_native(vm, dataPointer)) / 2);
+  if (length >= capacity) {
+    uint16_t newCapacity = capacity * 2;
+    if (newCapacity < VM_ARRAY_INITIAL_CAPACITY) newCapacity = VM_ARRAY_INITIAL_CAPACITY;
+    if (newCapacity > MAX_ALLOCATION_SIZE / 2) return MVM_E_ARRAY_TOO_LONG;
+  }
+  vm_arrayPush(vm, mvm_handleAt(array), mvm_handleAt(value));
+  return MVM_E_SUCCESS;
+}
+
+mvm_TeError mvm_getArrayLength(mvm_VM* vm, mvm_Value array, uint16_t* out_length) {
+  if (!vm || !out_length) return MVM_E_INVALID_ARGUMENTS;
+  if (mvm_typeOf(vm, array) != VM_T_ARRAY) return MVM_E_TYPE_ERROR;
+  LongPtr arrayPointer = DynamicPtr_decode_long(vm, array);
+  Value encodedLength = READ_FIELD_2(arrayPointer, TsArray, viLength);
+  if (!Value_isVirtualInt14(encodedLength)) return MVM_E_HEAP_CORRUPT;
+  *out_length = VirtualInt14_decode(vm, encodedLength);
+  return MVM_E_SUCCESS;
+}
+
+mvm_TeError mvm_arrayIteratorInit(mvm_VM* vm, mvm_TsArrayIterator* iterator, mvm_Value array) {
+  if (!vm || !iterator || iterator->_state != 0) return MVM_E_INVALID_ARGUMENTS;
+  if (mvm_typeOf(vm, array) != VM_T_ARRAY) return MVM_E_TYPE_ERROR;
+
+  mvm_initializeHandle(vm, &iterator->_array);
+  mvm_handleSet(&iterator->_array, array);
+  mvm_initializeHandle(vm, &iterator->_value);
+  mvm_handleSet(&iterator->_value, mvm_undefined);
+  iterator->_nextIndex = 0;
+  iterator->_state = 1;
+  return MVM_E_SUCCESS;
+}
+
+mvm_TeError mvm_arrayIteratorNext(mvm_VM* vm, mvm_TsArrayIterator* iterator, bool* out_done) {
+  if (!vm || !iterator || !out_done) return MVM_E_INVALID_ARGUMENTS;
+  if (iterator->_state == 0) return MVM_E_INVALID_HANDLE;
+  if (iterator->_state == 2) {
+    *out_done = true;
+    return MVM_E_SUCCESS;
+  }
+  if (iterator->_state != 1) return MVM_E_INVALID_HANDLE;
+
+  /* Read length and the item on every step. The backing allocation can move
+   * when the array grows, so the iterator retains the array value, not a raw
+   * pointer into its element storage. */
+  LongPtr arrayPointer = DynamicPtr_decode_long(vm, mvm_handleGet(&iterator->_array));
+  Value encodedLength = READ_FIELD_2(arrayPointer, TsArray, viLength);
+  if (!Value_isVirtualInt14(encodedLength)) return MVM_E_HEAP_CORRUPT;
+  uint16_t length = VirtualInt14_decode(vm, encodedLength);
+
+  if (iterator->_nextIndex >= length) {
+    iterator->_state = 2;
+    mvm_handleSet(&iterator->_value, mvm_undefined);
+    *out_done = true;
+    return MVM_E_SUCCESS;
+  }
+
+  DynamicPtr dataPointer = READ_FIELD_2(arrayPointer, TsArray, dpData);
+  if (dataPointer == VM_VALUE_NULL) return MVM_E_HEAP_CORRUPT;
+  LongPtr elements = DynamicPtr_decode_long(vm, dataPointer);
+  Value value = LongPtr_read2_aligned(LongPtr_add(elements, (int16_t)(iterator->_nextIndex * 2)));
+  if (value == VM_VALUE_DELETED) value = VM_VALUE_UNDEFINED;
+
+  mvm_handleSet(&iterator->_value, value);
+  iterator->_nextIndex++;
+  *out_done = false;
+  return MVM_E_SUCCESS;
+}
+
+mvm_TeError mvm_arrayIteratorRelease(mvm_VM* vm, mvm_TsArrayIterator* iterator) {
+  if (!vm || !iterator || iterator->_state == 0) return MVM_E_INVALID_ARGUMENTS;
+  mvm_TeError valueError = mvm_releaseHandle(vm, &iterator->_value);
+  mvm_TeError arrayError = mvm_releaseHandle(vm, &iterator->_array);
+  iterator->_nextIndex = 0;
+  iterator->_state = 0;
+  return valueError != MVM_E_SUCCESS ? valueError : arrayError;
 }
 
 #if MVM_SUPPORT_FLOAT

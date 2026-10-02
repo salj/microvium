@@ -1,6 +1,8 @@
 # Guide to interfacing between JS and C
 
-This guide discusses the interface between a Microvium VM (JavaScript app) and a C host without the use of any FFI wrapper library.
+This guide covers the numeric-ID C API. For named imports and exports with
+symbol and arity metadata, see [Named FFI linking](../docs/named-ffi.md).
+Neither interface adds string lookup to the VM call path.
 
 
 ## mvm_Value
@@ -16,7 +18,7 @@ The host can get an `mvm_Value` in a variety of ways, one of which calling API f
 
 ## Handles
 
-An `mvmValue` should typically be wrapped in a *handle* (`mvm_Handle`), which prevents the Microvium garbage collector from collecting the value. For example, if you allocate a new string in the VM, you may want to use the handle as follows:
+An `mvm_Value` should typically be wrapped in a *handle* (`mvm_Handle`), which prevents the Microvium garbage collector from collecting the value. For example, if you allocate a new string in the VM, you may want to use the handle as follows:
 
 ```c
 mvm_Handle myHandle;
@@ -122,13 +124,13 @@ vmExport(9, baz); // Export with ID 9
 The export table is part of the snapshot bytecode. The Microvium API function `mvm_resolveExports` can then be used in C to read the export table.
 
 ```c
-#define EXPORT_COUNT
+#define EXPORT_COUNT 3
 
 mvm_TeError err;
 
 mvm_VMExportID ids[EXPORT_COUNT] = { 2, 7, 9 };
 mvm_Value values[EXPORT_COUNT];
-err = mvm_resolveExports(vm, &ids, &values, EXPORT_COUNT);
+err = mvm_resolveExports(vm, ids, values, EXPORT_COUNT);
 if (err != MVM_E_SUCCESS) abort();
 
 mvm_Value foo = values[0]; // From ID 2
@@ -213,7 +215,7 @@ function run() {
 vmExport(1, run);
 ```
 
-The above assumes that `add` will be exposed to the VM with ID `3`, and `print` with ID `5`. These can be any chosen integers in the range 0 to 65535. These can overlap with the IDs used for exports, since the export and import tables are completely independent.
+The above assumes that `add` will be exposed to the VM with ID `3`, and `print` with ID `5`. These can be any chosen integers in the range 0 to 65535. Import and export IDs use independent tables and can overlap.
 
 I've also included a `run` function here to demonstrate how to actually call the imported functions.
 
@@ -228,24 +230,35 @@ value.
 To expose `add` and `print` to the VM, we need to use some glue code:
 
 ```c
-void main() {
+mvm_TeError resolveImport(mvm_HostFunctionID hostFunctionID, void* context, mvm_TfHostFunction* out_hostFunction);
+mvm_TeError add_glue(mvm_VM* vm, mvm_HostFunctionID hostFunctionID, mvm_Value* result, mvm_Value* args, uint8_t argCount);
+mvm_TeError print_glue(mvm_VM* vm, mvm_HostFunctionID hostFunctionID, mvm_Value* result, mvm_Value* args, uint8_t argCount);
+
+int main(void) {
   mvm_VM* vm;
   mvm_TeError err;
 
-  // The key for this example is the &resolveImport argument.
-  err = mvm_restore(&vm, &snapshot, snapshotSize, &resolveImport)
+  // The final argument resolves numeric imports while restoring.
+  err = mvm_restore(&vm, snapshot, snapshotSize, NULL, &resolveImport);
   if (err != MVM_E_SUCCESS) abort();
+  return 0;
 }
 
 mvm_TeError resolveImport(mvm_HostFunctionID hostFunctionID, void* context, mvm_TfHostFunction* out_hostFunction) {
   // Note: you could use a table for this instead of conditions
-  if (hostFunctionID == 3) *out_hostFunction = &add_glue;
-  if (hostFunctionID == 5) *out_hostFunction = &print_glue;
-  return MVM_E_FUNCTION_NOT_FOUND;
+  if (hostFunctionID == 3) {
+    *out_hostFunction = &add_glue;
+    return MVM_E_SUCCESS;
+  }
+  if (hostFunctionID == 5) {
+    *out_hostFunction = &print_glue;
+    return MVM_E_SUCCESS;
+  }
+  return MVM_E_UNRESOLVED_IMPORT;
 }
 
 mvm_TeError add_glue(mvm_VM* vm, mvm_HostFunctionID hostFunctionID, mvm_Value* result, mvm_Value* args, uint8_t argCount) {
-  if (argCount < 2) return MVM_E_UNEXPECTED;
+  if (argCount != 2) return MVM_E_UNEXPECTED;
   int a = mvm_toInt32(vm, args[0]);
   int b = mvm_toInt32(vm, args[1]);
   int c = add(a, b);
@@ -388,7 +401,7 @@ printf("%s\n", mvm_toStringUtf8(vm, c.value(), NULL)); // HelloWorld
 ```
 
 
-## Dynamic Exports
+## Dynamic numeric IDs
 
 You need not decide all the import and export IDs in advance. You can dynamically generate IDs as you need them, as in the following toy example:
 
@@ -404,97 +417,12 @@ myExport(bar); // ID 1
 myExport(baz); // ID 2
 ```
 
-But then how do we get matching IDs on the host side? We can use the build-time execution in Microvium, combined with the build-time `fs` module, to code-generate the C IDs, as in the following example:
+The host does not need to know the IDs in advance. At runtime, enumerate the
+numeric exports with `mvm_getExportCount` and `mvm_getExportID`, then resolve
+the values you need. This is useful for generated APIs where the host can
+discover the mapping from the snapshot itself.
 
-```js
-import * as fs from 'fs';
-
-let nextExportID = 0;
-let cHeader = '#pragma once\n';
-
-function myExport(name, func) {
-  const id = nextExportID++;
-  cHeader += `\n#define EXPORT_${name} ${id}`;
-  vmExport(id, func);
-}
-
-myExport('foo', foo); // ID 0
-myExport('bar', bar); // ID 1
-myExport('baz', baz); // ID 2
-
-fs.writeFileSync('my-export-ids.h', cHeader + '\n');
-```
-
-At build-time, this will code-generate the following C header file:
-
-```c
-#pragma once
-
-#define EXPORT_foo 0
-#define EXPORT_bar 1
-#define EXPORT_baz 2
-```
-
-You can play with variations of this to suit your specific needs. If you need your IDs to remain stable across app versions, you can keep a built-time JSON file that keeps track of the previous associations.
-
-
-## Code-generating FFI Glue Code
-
-Not only can you code-generate `#define` IDs, but you can generate all the glue code, with something like the following example:
-
-```js
-
-let cFile = '';
-
-function myExport(name, func, returnType, argTypes) {
-  const id = nextExportID++;
-  vmExport(id, func);
-
-  cFile += `
-    mvm_TeError ${name}_glue(
-      mvm_VM* vm,
-      mvm_HostFunctionID hostFunctionID,
-      mvm_Value* result,
-      mvm_Value* args,
-      uint8_t argCount
-    ) {
-      if (argCount < ${argTypes.length}) return MVM_E_UNEXPECTED;`;
-
-  for (let i = 0; i < argTypes.length; i++) {
-    const argType = argTypes[i];
-    if (argType === 'int32_t') {
-      cFile += `
-        int32_t arg${i} = mvm_toInt32(vm, args[${i}]);`
-    } else {
-      // Etc.
-    }
-  }
-
-  cFile += `
-    ${resultType} cResult = ${name}(`;
-  for (let i = 0; i < argTypes.length; i++) {
-    if (i !== 0) cFile += ', ';
-    cFile += `arg${i}`
-  };
-  cFile += ');';
-
-  if (resultType === 'int32_t') {
-    cFile += `
-      *result = mvm_newInt32(vm, cResult)`;
-  } else {
-    // Etc.
-  }
-
-  cFile += `
-    return MVM_E_SUCCESS;
-  }
-  `;
-}
-
-// Assuming foo has signature `int32_t(int32_t, int32_t)`
-myExport('foo', foo, 'int32_t', ['int32_t', 'int32_t']);
-
-fs.writeFileSync('my-glue-code.c', cFile + '\n');
-```
-
-A more comprehensive example exists [here](https://github.com/coder-mike/microvium-ffi-example) in C++.
+The compiler core has no filesystem API. A build tool may write generated
+headers or glue code outside the VM, using data supplied by its host. For a
+name-based host API with fixed `Value` signatures, use
+[named FFI](../docs/named-ffi.md) instead of maintaining a separate ID map.

@@ -12,9 +12,13 @@ Snapshotting is not just a cool feature of Microvium, it is foundational to the 
 
   1. The ability to _import source code_ files and modules.
 
-  2. Access to host-provided resources which may include database and filesystem access (where appropriate and granted). For example, to load configuration data.
+  2. Access to data and module sources provided by the compile-time host. The
+     compiler VM has no built-in filesystem API. A host adapter may read source
+     files or other inputs before passing their contents to the compiler.
 
-  3. The ability to programmatically code-generate or parse any useful supporting files, such C API headers, etc.
+  3. The ability to programmatically compute configuration and FFI metadata
+     while evaluating the source. A surrounding build tool can use that result
+     to generate C headers or other files.
 
 This approach has a few major advantages over alternative approaches:
 
@@ -24,12 +28,23 @@ This approach has a few major advantages over alternative approaches:
 
   - **Configuration**: by really running the script at compile time, the compile-time host is allowed to call any methods in the JS app, such as to inject configuration parameters.
 
-  - **FFI**: by really running the script at compile time, the script, if permitted, may write output files as a side effect of the compilation process, which may be used to auto-generate FFI "glue code".
+  - **FFI**: the compiler can record numeric or named imports and exports in
+    the snapshot. The host links those entries when it restores the VM. See
+    [the FFI guide](./ffi-guide.md) and [named FFI](../docs/named-ffi.md).
 
 For a specific example of snapshotting in action, see the [Getting Started](./getting-started.md) guide.
 
-## There are actually two implementations of the Microvium Engine
+## Compiler and runtime
 
-  1. One implementation in portable C code, optimized for embedded MCU targets, running very [lightweight on memory](./native-host/memory-usage.md) and with a small program footprint for particularly constrained devices. This is the version of Microvium you get when you integrate `microvium.c` [into your project](./getting-started.md#restoring-a-snapshot-in-c).
+  1. The portable C runtime restores snapshots and executes bytecode. It is
+     optimized for embedded targets and has a small memory footprint; see
+     [memory usage](./native-host/memory-usage.md) and the
+     [C integration guide](./getting-started.md#restoring-a-snapshot-in-c).
 
-  2. The other implementation is designed to run on desktop-like environments, providing access to advanced features such as source code parsing and integration with existing Node.js modules. This engine is implemented on top of Node.js and [offers a CLI](./getting-started.md#install-the-microvium-cli) for executing Microvium scripts, as well as [an npm library](./getting-started.md#hello-world-with-a-custom-nodejs-host) for running Microvium scripts within an existing Node.js application or in situations where you want to provide a host.
+  2. The TypeScript compiler and reference VM evaluate source and create
+     snapshots. They run through host adapters, including the Node.js package,
+     the native QuickJS `mvmc` executable, and the browser compiler. The
+     compiler core receives source text and does not access the filesystem;
+     adapters decide how source and output files are read or written. See
+     [compiler tools](../docs/compiler-cli.md), [native mvmc](../docs/native-mvmc.md),
+     and the [browser demo](../docs/browser-wasm.md).

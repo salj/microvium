@@ -1,57 +1,73 @@
-# Supported Language
+# Supported language
 
-To date, only a (small) subset of the JavaScript language is supported in Microvium. Basically, Microvium as it stands is meant to be a more-friendly alternative to something like [EmbedVM](http://www.clifford.at/embedvm/).
+Microvium compiles a subset of ECMAScript. It is not an ECMAScript-conforming
+implementation. The compiler parses source with Babel, then rejects syntax it
+does not lower. Successful parsing alone does not mean a feature is supported.
+See the [ECMAScript specification](https://tc39.es/ecma262/) for the full
+language and the [end-to-end tests](../test/end-to-end/tests) for executable
+examples of Microvium behavior.
 
-## Supported Language features
+## Supported syntax
 
-Note: the most up-to-date authority on supported features is the [set of test scripts](../test/end-to-end/tests), each file of which is a stand-alone Microvium script that exercises a series of features in the language.
+- Declarations: `var`, `let`, `const`, function declarations, and class
+  declarations. Variable names and function parameters must use simple
+  identifiers; destructuring, rest parameters, and default parameters are not
+  supported.
+- Functions: anonymous function expressions, arrow functions, nested
+  functions, and closures. Async functions and `await` inside an async function
+  are supported. Named function expressions, generators, and top-level `await`
+  are rejected.
+- Control flow: blocks, `if`/`else`, `while`, `do`/`while`, and `for` loops.
+  Any `for` initializer, test, or update clause may be omitted. `switch` uses
+  strict equality for case matching and supports fallthrough. Unlabelled
+  `break`, `return`, and `throw` are supported.
+- Exceptions: `try`/`catch`, including `catch` without a binding. `finally` is
+  not supported.
+- Modules: static named, default, namespace, and side-effect imports; direct
+  exports of variable, function, and class declarations. The host resolves
+  imported modules while compiling. Named host imports and exports use the
+  separate [named FFI interface](../docs/named-ffi.md).
+- Values and expressions: booleans, numbers, strings, `null`, `undefined`,
+  arrays (including elisions), plain object literals, computed and ordinary
+  property access, calls, `new`, `this`, conditional expressions, `&&`, `||`,
+  and untagged template literals.
+- Operators: arithmetic, bitwise and shift operators, strict equality,
+  relational comparisons, unary `+`, `-`, `!`, `~`, `typeof`, and prefix or
+  postfix `++`/`--`. Numeric conversion and arithmetic details are described
+  in [Numeric types](./numeric-types.md).
+- Limited class declarations: constructors, methods, and instance or static
+  fields with simple, non-computed names. The implementation does not support
+  inheritance.
 
- - Basic control flow statements (`if`/`else`, `while`, `do..while`, `for`)
- - Primitive operators (`+`, `++`, `-`, `--`, `/`, `%`, `*`, `**`, `&`, `|`, `>>`, `>>>`, `<<`, `^`, `===`, `!==`, `>`, `<`, `>=`, `<=`, `!`, `~`, `? :`, `typeof`), with the exception that inequality operators (`>`, `<`, `>=`, `<=`) only work on numbers at the moment.
- - Variable declarations: `var`, `let`, and `const`
- - Nested functions (closures) and function/arrow expressions
- - Dynamically-sized arrays and objects (with limitations, see the next section), computed properties (`o[p]`).
- - Function and method calls (`f()`, `o.m()`, `o[m]()`), `this`
- - Primitive literals and simple globals: `true`/`false`, `42`, `"hello"`, `undefined`, `null`, `NaN`, `Infinity`
- - Object and array literals (`{...}` and `[...]`).
- - Modules, with `import` and `export` statements
- - `throw`, `try`, and `catch` (but not `finally`)
- - `Reflect.ownKeys` (enumerate the keys of an object)
- - `Uint8Array` as a lightweight buffer type
- - Some `class` features: class declarations, constructors and methods.
- - See also [supported builtins](./supported-builtins.md)
+## Restrictions
 
-## Numeric types
+- Object literal properties must have simple identifier keys. Object methods,
+  computed keys, and spread properties are unsupported. Shorthand properties
+  such as `{ value }` are supported.
+- Array and call spread are unsupported. Arrays can contain holes; iteration
+  syntax is not implemented.
+- Class expressions, `extends`, `super`, computed class names, private class
+  names, decorators, getters, setters, async methods, and generator methods are
+  unsupported.
+- Only unlabelled `break` is supported. `continue`, labels, `for...in`, and
+  `for...of` are unsupported.
+- Export lists, re-exports, and default exports are unsupported. Dynamic
+  `import()` and CommonJS `require` are unsupported.
+- `==`, `!=`, `in`, `instanceof`, `??`, `void`, and `delete` are unsupported.
+  Optional chaining (`?.`) and the `with` statement are unsupported.
+  Increment and decrement targets are limited to variables and non-computed
+  property chains rooted in a variable or `this`; `obj[key]++` and targets
+  rooted in a computed expression are unsupported.
+- `arguments`, `eval`, regular expressions, BigInt literals, symbols,
+  `WeakMap`, destructuring, and tagged template literals are unsupported.
+- Relational operators coerce non-number operands to numbers. In particular,
+  string-to-string comparisons do not use ECMAScript's lexicographic ordering.
+- The built-in library is small. See [Supported builtins](./supported-builtins.md)
+  for the provided globals and methods; standard JavaScript builtins not listed
+  there are not implied to exist.
 
-Numbers can carry `iN`, `uN`, `f32`, or `f64` flavors while remaining ordinary
-JavaScript `number` values (`typeof x === "number"`). Flavors affect conversion
-and arithmetic, not variable declarations. The syntax distinguishes expression
-boundaries from casts; see [Numeric types](./numeric-types.md) for the rules and
-examples.
-
-## NOT Supported
-
-Some notable JavaScript features that are NOT supported in Microvium (some of these may be supported in the future):
-
- - `void`, `delete`, and `in` operators.
- - Option chaining operators like `x?.y`
- - Nullish coalescing operator `??`
- - The increment/decrement operators aren't supported on expressions that have computed properties, such as `obj[x]++`.
- - Class inheritance (`extends`, `super`) and computed class members (but you can assign directly to the class prototype if you need to).
- - `instanceof`
- - Class expressions
- - Most of the builtin functions and objects. For example, there is no `Array.prototype.map` or `Uint8Array.prototype.map`.
- - `finally`
- - Iterators and `for..of`
- - `for..in` (for object key iteration, use `Reflect.ownKeys`)
- - Sloppy equality (`==`, `!=`)
- - [`arguments`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Functions/arguments), `with`
- - Regular expressions
- - BigInt, symbols, WeakMaps
- - Destructuring, spread, rest, and default parameters
- - Generators, Promises, async/await
- - `require` or dynamic `import`
- - `eval`
- - `globalThis`
-
-Note: any deviation of Microvium from the ECMAScript standard (including unsupported features) is subject to change and should not be relied upon.
+These lists describe the current compiler surface, not a promise of future
+ECMAScript compatibility. Microvium also has a deliberate numeric-flavor
+extension: `iN`, `uN`, `f32`, and `f64` values remain JavaScript `number` values
+but use Microvium-specific arithmetic and conversion rules. See
+[Numeric types](./numeric-types.md).

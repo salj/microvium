@@ -13,6 +13,10 @@ This documentation is a work-in-progress. Please request anything you would like
 
 ## Compiler CLI
 
+This page describes the Node.js CLI. The source-only compiler adapter and the
+native QuickJS compiler are documented in [Compiler command-line tools](../docs/compiler-cli.md)
+and [Native mvmc](../docs/native-mvmc.md).
+
 
 ### Install
 
@@ -98,6 +102,10 @@ These globals are available only at compile-time (they are [ephemerals](#ephemer
 - `JSON.parse`
 - `JSON.stringify`
 - [`globalThis`](#globalthis)
+
+Named host imports and exports use `@mvm-ffi` declarations. See
+[Named FFI linking](../docs/named-ffi.md) for the source annotation, snapshot
+metadata, and host binding APIs.
 
 
 ### `globalThis`

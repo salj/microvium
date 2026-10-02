@@ -1,42 +1,54 @@
-# Supported Builtins
+# Supported builtins
 
-### Standard builtin functions and objects
+Microvium does not provide the full ECMAScript standard library. The globals
+and methods below are the builtins currently supplied by the VM or its default
+host setup. A custom host can provide additional globals.
 
-`Reflect.ownKeys` - returns an array of keys for an object (only supported on non-array, non-function objects)
+## VM builtins
 
-### Numeric introspection
+- `Infinity`, `NaN`, and `undefined` are available as globals.
+- `Number.isNaN(value)` returns true only for NaN.
+- `Number.kind(value)` returns `number`, `iN`, `uN`, `f32`, or `f64` for a
+  number, and `undefined` for any other value.
+- `Number.isInteger(value)` returns true for every typed integer, including
+  exact 64-bit values above `2^53`. For ordinary Numbers and floating flavors,
+  it is true only for finite integral values.
+- `Reflect.ownKeys(object)` returns the own keys of a plain object. It rejects
+  arrays, functions, and other non-plain values. Internal VM slots are not
+  included.
+- `Promise` is available for the VM's async functions. The VM implements the
+  promise behavior needed by `async`, `await`, and the Promise constructor; it
+  is not a full ECMAScript Promise library.
 
-`Number.kind(value)` returns the semantic numeric flavor: `number` for an
-ordinary Number, `iN` or `uN` for a typed integer, and `f32` or `f64` for an
-explicit float. It returns `undefined` for non-numbers.
-
-`Number.isInteger(value)` returns true for every typed integer, including exact
-64-bit values above `2^53`. For ordinary Numbers and floating flavors it is true
-only for finite integral values; it returns false for non-numbers.
-
-`typeof` remains `"number"` for every numeric flavor. Numeric `===` and `!==`
-ignore flavor and compare numeric values. The VM's physical storage choice is
-not exposed by these builtins. See [Numeric types](./numeric-types.md) for
+`typeof` reports `number` for every numeric flavor. Numeric `===` and `!==`
+ignore flavor and compare values. See [Numeric types](./numeric-types.md) for
 arithmetic, conversion, and precision rules.
 
-## Additional builtin function and objects
+## Microvium-specific globals
 
-### vmExport(id, func)
+- `Microvium.newUint8Array(size)` creates a byte array with an integer length
+  from 0 through 4092.
+- `Microvium.typeCodeOf(value)` returns the Microvium type code for a value.
+- `Microvium.numericKindOf(value)` and `Microvium.numericIsInteger(value)` are
+  the underlying operations used by `Number.kind` and `Number.isInteger`.
+- `Microvium.noOpFunction` is a function that returns `undefined` without
+  doing work.
 
-Export a function to be accessible to the host at the given ID.
+When the VM's default library is enabled, arrays also have `Array.prototype.push`.
+There is no general Array method library; for example, `map`, `filter`, and
+`join` are not provided.
 
-The ID can be any integer in the range 0 to 65535.
+## Host and compile-time globals
 
-(This function is only available at compile-time)
+These are supplied by a host setup rather than being ECMAScript builtins:
 
-### vmImport(id)
+- `vmImport(id)` and `vmExport(id, value)` register numeric FFI links while
+  evaluating source at compile time.
+- `console.log` is supplied by the default host setup. A program that needs it
+  after restore must bind it through `vmImport`.
+- `globalThis` is supplied by the default host setup as a proxy to the VM's
+  compile-time globals. It is not a runtime global in a restored snapshot.
+- `JSON.parse` and `JSON.stringify` are available in the default compile-time
+  host setup; they are not runtime library functions.
 
-Import a host function to be accessed by JS code in the VM.
-
-The ID can be any integer in the range 0 to 65535.
-
-(This function is only available at compile-time)
-
-### Microvium.newUint8Array(size)
-
-Create a Uint8Array buffer with the given size. Sizes up to 4095 bytes are supported.
+For named imports and exports, see [Named FFI linking](../docs/named-ffi.md).

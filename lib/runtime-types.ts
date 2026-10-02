@@ -180,7 +180,7 @@ export enum TeTypeCode {
 
   TC_REF_CLASS              = 0x9, // TsClass
   TC_REF_VIRTUAL            = 0xA, // Reserved: TsVirtual
-  TC_REF_RESERVED_1         = 0xB, // Reserved
+  TC_REF_UINT8_ARRAY_EXT    = 0xB, // Uint8Array with a 4kB size bias
   TC_REF_PROPERTY_LIST      = 0xC, // TsPropertyList - Object represented as linked list of properties
   TC_REF_ARRAY              = 0xD, // TsArray
   TC_REF_FIXED_LENGTH_ARRAY = 0xE, // TsFixedLengthArray
@@ -262,6 +262,11 @@ export function isUInt4(value: number): boolean {
     && value >= 0
     && value <= 0xF;
 }
+
+/** Maximum Uint8Array length, limited by VirtualInt14 indexing. */
+export const MAX_UINT8_ARRAY_LENGTH = 0x1FFF;
+/** The extended Uint8Array header type biases its 12-bit size by 4kB. */
+export const UINT8_ARRAY_EXTENDED_SIZE_BIAS = 0x1000;
 
 export function isUInt7(value: number): boolean {
   return (value | 0) === value

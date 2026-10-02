@@ -5,7 +5,7 @@ import * as IL from './il';
 import * as VM from './virtual-machine-types';
 import { assertUnreachable, hardAssert, notUndefined, unexpected, invalidOperation } from './utils';
 import * as _ from 'lodash';
-import { vm_Reference, mvm_Value, vm_TeWellKnownValues, TeTypeCode, UInt8, isUInt12, isSInt14, isSInt32, isUInt16, isUInt4, UInt16, isUInt14, mvm_TeBytecodeSection, mvm_TeBuiltins  } from './runtime-types';
+import { vm_Reference, mvm_Value, vm_TeWellKnownValues, TeTypeCode, UInt8, isUInt12, isSInt14, isSInt32, isUInt16, isUInt4, UInt16, isUInt14, mvm_TeBytecodeSection, mvm_TeBuiltins, MAX_UINT8_ARRAY_LENGTH, UINT8_ARRAY_EXTENDED_SIZE_BIAS } from './runtime-types';
 import { BinaryRegion, Future, FutureLike } from './binary-region';
 import { HTML, BinaryData } from './visual-buffer';
 import * as formats from './snapshot-binary-html-formats';
@@ -140,13 +140,28 @@ export function encodeSnapshot(snapshot: SnapshotIL, generateDebugHTML: boolean,
     requiredFeatureFlags |= 1 << flag;
   }
   const usesNumericTypes = snapshot.flags.has(IL.ExecutionFlag.NumericTypes);
+  const requiresUint8ArrayV2Support =
+    [...snapshot.allocations.values()].some(allocation =>
+      allocation.type === 'Uint8ArrayAllocation' &&
+      (allocation.bytes.length === 0 || allocation.bytes.length > 0xFFF)
+    ) ||
+    [...snapshot.functions.values()].some(func =>
+      Object.values(func.blocks).some(block =>
+        block.operations.some(operation => operation.opcode === 'Uint8ArrayNew')
+      )
+    );
   if (requiredFeatureFlags > 0xFFFF) {
     return invalidOperation('Snapshot feature flags exceed the 16-bit v9 header field');
   }
   if (snapshot.numericOptions.defaultFloatWidth === 32 && !usesNumericTypes) {
     return invalidOperation('An f32 default requires the numeric-types snapshot feature');
   }
-  const requiredEngineVersion = usesNumericTypes ? 1 : 0;
+  // Runtime Uint8Array creation can receive a dynamic length. Empty arrays also
+  // use a v2 GC layout, so either case requires the updated runtime ABI.
+  const requiredEngineVersion = Math.max(
+    usesNumericTypes ? 1 : 0,
+    requiresUint8ArrayV2Support ? 2 : 0
+  );
   const numericOptions = usesNumericTypes && snapshot.numericOptions.defaultFloatWidth === 32 ? 0x01 : 0x00;
 
   assignIndexesToGlobalSlots();
@@ -919,11 +934,21 @@ export function encodeSnapshot(snapshot: SnapshotIL, generateDebugHTML: boolean,
     const subRegion = new BinaryRegion();
     const bytes = allocation.bytes;
     const len = bytes.length;
+    if (len > MAX_UINT8_ARRAY_LENGTH) {
+      throw new Error(`Uint8Array length ${len} exceeds the maximum ${MAX_UINT8_ARRAY_LENGTH}`);
+    }
     padToNextAddressable(region, { headerSize: 2 });
-    const headerWord = makeHeaderWord(len, TeTypeCode.TC_REF_UINT8_ARRAY);
+    const isExtended = len > 0xFFF;
+    const typeCode = isExtended ? TeTypeCode.TC_REF_UINT8_ARRAY_EXT : TeTypeCode.TC_REF_UINT8_ARRAY;
+    const encodedSize = isExtended ? len - UINT8_ARRAY_EXTENDED_SIZE_BIAS : len;
+    const headerWord = makeHeaderWord(encodedSize, typeCode);
     subRegion.append(headerWord, `Uint8Array.[header]`, formats.uHex16LERow);
     const startOffset = subRegion.currentOffset;
     subRegion.append(Buffer.from(allocation.bytes), `Uint8Array.[data]`, formats.bufferRow)
+    if (len === 0) {
+      // The VM needs a two-byte forwarding slot for empty allocations.
+      subRegion.append(0, `<padding>`, formats.uInt16LERow);
+    }
     region.appendBuffer(subRegion);
 
     return offsetToReferenceable(startOffset, memoryRegion, `Uint8Array(${debugName})`);

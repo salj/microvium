@@ -48,6 +48,10 @@ The host can create a new JavaScript value using one of these FFI functions:
 
 Note: `mvm_newInt32` is more efficient than `mvm_newNumber` if you are creating a number from a signed 32-bit integer. Also, `mvm_newInt32` is available even when float support is disabled in the port file (`MVM_SUPPORT_FLOAT`).
 
+`mvm_uint8ArrayFromBytes` copies up to 8191 bytes into a Microvium byte array.
+The host copy can then be discarded or reused. The VM can also create one with
+`Microvium.newUint8Array(size)`.
+
 
 ## Reading the contents of JavaScript values
 
@@ -61,6 +65,13 @@ When you have an `mvm_Value`, you can read its contents using one of these Micro
 - `mvm_uint8ArrayToBytes`
 - `mvm_typeOf`
 - `mvm_isNaN`
+
+`mvm_uint8ArrayToBytes` returns a direct pointer to the byte array's storage and
+its length, up to 8191 bytes. The pointer is borrowed from the VM heap; call no
+other Microvium API while using it, since the next API call may trigger GC and
+move the array. Call `mvm_uint8ArrayToBytes` again after each VM call to get a
+current pointer. The returned bytes can be mutated in place if the array is in
+RAM.
 
 ### Exact numeric flavors
 

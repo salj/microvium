@@ -200,6 +200,36 @@ suite('native-api', function () {
     // The data is passed by value (copy), so the original shouldn't change
     assert.deepEqual(myData, Buffer.from([1, 2, 254, 255]));
     assert.deepEqual(incremented, Buffer.from([2, 3, 255, 0]));
+
+    const largeData = Buffer.alloc(8191);
+    largeData[0] = 1;
+    largeData[4095] = 2;
+    largeData[4096] = 254;
+    largeData[8190] = 255;
+    const largeResult = incrementBuffer(largeData);
+    assert.equal(largeResult.length, 8191);
+    assert.equal(largeResult[0], 2);
+    assert.equal(largeResult[4095], 3);
+    assert.equal(largeResult[4096], 255);
+    assert.equal(largeResult[8190], 0);
+
+    const emptyResult = incrementBuffer(Buffer.alloc(0));
+    assert.equal(emptyResult.length, 0);
+  })
+
+  test('zero-length uint8arrays retain their forwarding slot across GC', () => {
+    const snapshot = compileJs`
+      vmExport(1, () => Microvium.newUint8Array(0));
+    `;
+    const vm = new NativeVM(snapshot.data, () => unexpected());
+
+    const emptyFromVM = vm.call(vm.resolveExport(1), []);
+    vm.runGC(false);
+    assert.equal(emptyFromVM.uint8ArrayToBytes().length, 0);
+
+    const emptyFromHost = vm.uint8ArrayFromBytes(Buffer.alloc(0));
+    vm.runGC(false);
+    assert.equal(emptyFromHost.uint8ArrayToBytes().length, 0);
   })
 
   test('invoke-gc-from-closure', () => {

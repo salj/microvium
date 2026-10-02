@@ -3,7 +3,7 @@ import { SnapshotIL, ENGINE_MAJOR_VERSION, HEADER_SIZE, ENGINE_MINOR_VERSION, LE
 import { notImplemented, invalidOperation, unexpected, hardAssert, assertUnreachable, notUndefined, reserved, entries } from "./utils";
 import { SmartBuffer } from 'smart-buffer';
 import { crc16ccitt } from "crc";
-import { vm_TeWellKnownValues, UInt16, TeTypeCode, mvm_TeBytecodeSection, mvm_TeBuiltins, isUInt16, isSInt14 } from './runtime-types';
+import { vm_TeWellKnownValues, UInt16, TeTypeCode, mvm_TeBytecodeSection, mvm_TeBuiltins, isUInt16, isSInt14, UINT8_ARRAY_EXTENDED_SIZE_BIAS } from './runtime-types';
 import * as _ from 'lodash';
 import { stringifyValue, stringifyOperation, stringifyAllocation } from './stringify-il';
 import { vm_TeOpcode, vm_TeSmallLiteralValue, vm_TeOpcodeEx1, vm_TeOpcodeEx2, vm_TeOpcodeEx3, vm_TeOpcodeEx4, vm_TeBitwiseOp, vm_TeNumberOp } from './bytecode-opcodes';
@@ -694,8 +694,11 @@ export function decodeSnapshot(snapshot: Snapshot, options: SnapshotReadOptions 
 
   function readAllocationHeader(allocationOffset: Offset, region: Region) {
     const headerWord = buffer.readUInt16LE(allocationOffset - 2);
-    const size = (headerWord & 0xFFF); // Size excluding header
-    const typeCode: TeTypeCode = headerWord >> 12;
+    const encodedSize = headerWord & 0xFFF;
+    const rawTypeCode: TeTypeCode = headerWord >> 12;
+    const isExtendedUint8Array = rawTypeCode === TeTypeCode.TC_REF_UINT8_ARRAY_EXT;
+    const size = encodedSize + (isExtendedUint8Array ? UINT8_ARRAY_EXTENDED_SIZE_BIAS : 0);
+    const typeCode = isExtendedUint8Array ? TeTypeCode.TC_REF_UINT8_ARRAY : rawTypeCode;
 
     // Allocation header
     region.push({
@@ -736,7 +739,6 @@ export function decodeSnapshot(snapshot: Snapshot, options: SnapshotReadOptions 
       case TeTypeCode.TC_REF_VIRTUAL: return reserved();
       case TeTypeCode.TC_REF_UINT8_ARRAY: return decodeUint8Array(region, offset, size, section);
       case TeTypeCode.TC_REF_CLASS: return decodeClass(region, offset, size);
-      case TeTypeCode.TC_REF_RESERVED_1: return unexpected();
       default: return unexpected();
     }
   }

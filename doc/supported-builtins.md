@@ -27,12 +27,19 @@ arithmetic, conversion, and precision rules.
 ## Microvium-specific globals
 
 - `Microvium.newUint8Array(size)` creates a byte array with an integer length
-  from 0 through 4092.
+  from 0 through 8191. It supports numeric indexing and `.length`; it is not an
+  ECMAScript `Uint8Array` backed by an `ArrayBuffer`.
 - `Microvium.typeCodeOf(value)` returns the Microvium type code for a value.
 - `Microvium.numericKindOf(value)` and `Microvium.numericIsInteger(value)` are
   the underlying operations used by `Number.kind` and `Number.isInteger`.
 - `Microvium.noOpFunction` is a function that returns `undefined` without
   doing work.
+
+```js
+const packet = Microvium.newUint8Array(5000);
+packet[4095] = 0xA5;
+packet[4096] = 0x5A;
+```
 
 When the VM's default library is enabled, arrays also have `Array.prototype.push`.
 There is no general Array method library; for example, `map`, `filter`, and

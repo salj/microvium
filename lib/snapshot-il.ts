@@ -9,7 +9,7 @@ export const ENGINE_MAJOR_VERSION = 9  /* aka MVM_BYTECODE_VERSION */;
 export const HEADER_SIZE = 28;
 export const LEGACY_ENGINE_MAJOR_VERSION = 8;
 export const LEGACY_HEADER_SIZE = 28;
-export const ENGINE_MINOR_VERSION = 1  /* aka MVM_ENGINE_VERSION */;
+export const ENGINE_MINOR_VERSION = 2  /* aka MVM_ENGINE_VERSION */;
 
 export interface SnapshotReadOptions {
   /** Permit reading v8.1 snapshots when the native runtime is built with the same support. */

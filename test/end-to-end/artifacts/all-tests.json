@@ -157,5 +157,7 @@
     "native named FFI reads multi-byte export counts and symbol indexes in the native VM",
     "end-to-end for-statement-omitted-clauses",
     "src-to-il classifies function nodes without treating classes as functions",
-    "Uint8Array reference VM out-of-range writes are rejected"
+    "Uint8Array reference VM out-of-range writes are rejected",
+    "Uint8Array reference VM snapshots that can create extended arrays require engine minor 2",
+    "native-api zero-length uint8arrays retain their forwarding slot across GC"
 ]

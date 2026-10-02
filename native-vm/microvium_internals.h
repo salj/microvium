@@ -438,8 +438,10 @@ typedef MVM_LONG_PTR_TYPE LongPtr;
 // Offset of field in a struct
 #define OFFSETOF(TYPE, ELEMENT) ((uint16_t)(uintptr_t)&(((TYPE *)0)->ELEMENT))
 
-// Maximum size of an allocation (4kB)
+// Maximum size of an ordinary allocation (4kB)
 #define MAX_ALLOCATION_SIZE 0xFFF
+#define MAX_UINT8_ARRAY_SIZE 0x1FFF
+#define EXTENDED_UINT8_ARRAY_SIZE_BIAS 0x1000
 
 // This is the only valid way of representing NaN
 #define VM_IS_NAN(v) ((v) == VM_VALUE_NAN)
@@ -653,7 +655,7 @@ typedef enum TeTypeCode {
 
   TC_REF_CLASS              = 0x9, // TsClass
   TC_REF_VIRTUAL            = 0xA, // Reserved: TsVirtual
-  TC_REF_RESERVED_1         = 0xB, // Reserved
+  TC_REF_UINT8_ARRAY_EXT    = 0xB, // Uint8Array with a 4kB size bias
   TC_REF_PROPERTY_LIST      = 0xC, // TsPropertyList - Object represented as linked list of properties
   TC_REF_ARRAY              = 0xD, // TsArray
   TC_REF_FIXED_LENGTH_ARRAY = 0xE, // TsFixedLengthArray
@@ -1334,7 +1336,7 @@ static const uint8_t typeByTC[TC_END] = {
   VM_T_SYMBOL,      /* TC_REF_SYMBOL             */
   VM_T_CLASS,       /* TC_REF_CLASS              */
   VM_T_END,         /* TC_REF_VIRTUAL            */
-  VM_T_END,         /* TC_REF_RESERVED_1         */
+  VM_T_END,         /* TC_REF_UINT8_ARRAY_EXT    (normalized to TC_REF_UINT8_ARRAY) */
   VM_T_OBJECT,      /* TC_REF_PROPERTY_LIST      */
   VM_T_ARRAY,       /* TC_REF_ARRAY              */
   VM_T_ARRAY,       /* TC_REF_FIXED_LENGTH_ARRAY */

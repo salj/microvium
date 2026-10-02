@@ -1070,8 +1070,10 @@ typedef MVM_LONG_PTR_TYPE LongPtr;
 // Offset of field in a struct
 #define OFFSETOF(TYPE, ELEMENT) ((uint16_t)(uintptr_t)&(((TYPE *)0)->ELEMENT))
 
-// Maximum size of an allocation (4kB)
+// Maximum size of an ordinary allocation (4kB)
 #define MAX_ALLOCATION_SIZE 0xFFF
+#define MAX_UINT8_ARRAY_SIZE 0x1FFF
+#define EXTENDED_UINT8_ARRAY_SIZE_BIAS 0x1000
 
 // This is the only valid way of representing NaN
 #define VM_IS_NAN(v) ((v) == VM_VALUE_NAN)
@@ -1285,7 +1287,7 @@ typedef enum TeTypeCode {
 
   TC_REF_CLASS              = 0x9, // TsClass
   TC_REF_VIRTUAL            = 0xA, // Reserved: TsVirtual
-  TC_REF_RESERVED_1         = 0xB, // Reserved
+  TC_REF_UINT8_ARRAY_EXT    = 0xB, // Uint8Array with a 4kB size bias
   TC_REF_PROPERTY_LIST      = 0xC, // TsPropertyList - Object represented as linked list of properties
   TC_REF_ARRAY              = 0xD, // TsArray
   TC_REF_FIXED_LENGTH_ARRAY = 0xE, // TsFixedLengthArray
@@ -1966,7 +1968,7 @@ static const uint8_t typeByTC[TC_END] = {
   VM_T_SYMBOL,      /* TC_REF_SYMBOL             */
   VM_T_CLASS,       /* TC_REF_CLASS              */
   VM_T_END,         /* TC_REF_VIRTUAL            */
-  VM_T_END,         /* TC_REF_RESERVED_1         */
+  VM_T_END,         /* TC_REF_UINT8_ARRAY_EXT    (normalized to TC_REF_UINT8_ARRAY) */
   VM_T_OBJECT,      /* TC_REF_PROPERTY_LIST      */
   VM_T_ARRAY,       /* TC_REF_ARRAY              */
   VM_T_ARRAY,       /* TC_REF_FIXED_LENGTH_ARRAY */
@@ -5408,11 +5410,18 @@ static inline TeTypeCode vm_getTypeCodeFromHeaderWord(uint16_t headerWord) {
   // The type code is in the high byte because it's the byte that occurs closest
   // to the allocation itself, potentially allowing us in future to omit the
   // size in the allocation header for some kinds of allocations.
-  return (TeTypeCode)(headerWord >> 12);
+  TeTypeCode typeCode = (TeTypeCode)(headerWord >> 12);
+  // The extended byte-array type is an encoding alias for Uint8Array. Keep
+  // TC_REF_VIRTUAL reserved for its planned proxy-like object representation.
+  return typeCode == TC_REF_UINT8_ARRAY_EXT ? TC_REF_UINT8_ARRAY : typeCode;
 }
 
 static inline uint16_t vm_makeHeaderWord(VM* vm, TeTypeCode tc, uint16_t size) {
   CODE_COVERAGE(210); // Hit
+  if (tc == TC_REF_UINT8_ARRAY_EXT) {
+    VM_ASSERT(vm, size >= EXTENDED_UINT8_ARRAY_SIZE_BIAS);
+    size -= EXTENDED_UINT8_ARRAY_SIZE_BIAS;
+  }
   VM_ASSERT(vm, size <= MAX_ALLOCATION_SIZE);
   VM_ASSERT(vm, tc <= 0xF);
   return ((tc << 12) | size);
@@ -5441,7 +5450,22 @@ static inline uint16_t vm_getAllocationSizeExcludingHeaderFromHeaderWord(uint16_
   // Note: The header size is measured in bytes and not words mainly to account
   // for string allocations, which would be inconvenient to align to word
   // boundaries.
-  return headerWord & 0xFFF;
+  uint16_t size = headerWord & 0xFFF;
+  if ((headerWord >> 12) == TC_REF_UINT8_ARRAY_EXT) {
+    return size + EXTENDED_UINT8_ARRAY_SIZE_BIAS;
+  }
+  if ((headerWord >> 12) == TC_REF_UINT8_ARRAY && size == 0) {
+    // Zero-length arrays still need a two-byte forwarding slot for the GC.
+    return 2;
+  }
+  return size;
+}
+
+static inline uint16_t vm_getUint8ArrayLengthFromHeaderWord(uint16_t headerWord) {
+  if ((headerWord >> 12) == TC_REF_UINT8_ARRAY && (headerWord & 0xFFF) == 0) {
+    return 0;
+  }
+  return vm_getAllocationSizeExcludingHeaderFromHeaderWord(headerWord);
 }
 
 #if MVM_SAFE_MODE
@@ -6598,7 +6622,13 @@ MVM_HIDDEN void* mvm_allocate(VM* vm, uint16_t sizeBytes,  uint8_t /*TeTypeCode*
   uint16_t* p;
   uint16_t* end;
 
-  if (sizeBytes >= (MAX_ALLOCATION_SIZE + 1)) {
+  TeTypeCode tc = (TeTypeCode)typeCode;
+  if (tc == TC_REF_UINT8_ARRAY && sizeBytes > MAX_ALLOCATION_SIZE) {
+    tc = TC_REF_UINT8_ARRAY_EXT;
+  }
+
+  if (sizeBytes > MAX_ALLOCATION_SIZE &&
+      (tc != TC_REF_UINT8_ARRAY_EXT || sizeBytes > MAX_UINT8_ARRAY_SIZE)) {
     CODE_COVERAGE_ERROR_PATH(353); // Not hit
     MVM_FATAL_ERROR(vm, MVM_E_ALLOCATION_TOO_LARGE);
   } else {
@@ -6611,7 +6641,9 @@ MVM_HIDDEN void* mvm_allocate(VM* vm, uint16_t sizeBytes,  uint8_t /*TeTypeCode*
 
   CODE_COVERAGE(184); // Hit
   TsBucket* pBucket;
-  const uint16_t sizeIncludingHeader = (sizeBytes + 3) & 0xFFFE;
+  // Keep a forwarding-pointer slot even for a zero-length Uint8Array.
+  uint16_t storedSize = sizeBytes == 0 && tc == TC_REF_UINT8_ARRAY ? 2 : sizeBytes;
+  const uint16_t sizeIncludingHeader = (storedSize + 3) & 0xFFFE;
   // + 2 bytes header, round up to 2-byte boundary
   VM_ASSERT(vm, (sizeIncludingHeader & 1) == 0);
 
@@ -6637,7 +6669,7 @@ RETRY:
   pBucket->pEndOfUsedSpace = end;
 
   // Write header
-  *p++ = vm_makeHeaderWord(vm, (TeTypeCode)typeCode, sizeBytes);
+  *p++ = vm_makeHeaderWord(vm, tc, sizeBytes);
 
   return p;
 
@@ -7643,7 +7675,7 @@ void mvm_runGC(VM* vm, bool squeeze) {
 
       // Note: we're comparing the header words here to compare the type code.
       // The RHS here is constant
-      if (header < (uint16_t)(TC_REF_DIVIDER_CONTAINER_TYPES << 12)) { // Non-container types
+      if (vm_getTypeCodeFromHeaderWord(header) < TC_REF_DIVIDER_CONTAINER_TYPES) { // Non-container types
         CODE_COVERAGE(502); // Hit
         p = next;
         continue;
@@ -9180,12 +9212,6 @@ bool mvm_toBool(VM* vm, Value value) {
       return MVM_E_FATAL_ERROR_MUST_KILL_VM;
 
     }
-    case TC_REF_RESERVED_1: {
-      CODE_COVERAGE_UNTESTED(610); // Not hit
-      VM_RESERVED(vm);
-      return MVM_E_FATAL_ERROR_MUST_KILL_VM;
-
-    }
     case TC_VAL_UNDEFINED: {
       CODE_COVERAGE(315); // Hit
       return false;
@@ -9586,7 +9612,7 @@ SUB_GET_PROPERTY:
       CODE_COVERAGE(339); // Hit
       lpArr = DynamicPtr_decode_long(vm, objectValue);
       uint16_t header = readAllocationHeaderWord_long(lpArr);
-      length = vm_getAllocationSizeExcludingHeaderFromHeaderWord(header);
+      length = vm_getUint8ArrayLengthFromHeaderWord(header);
       if (propertyName == VM_VALUE_STR_LENGTH) {
         CODE_COVERAGE(340); // Hit
         VM_EXEC_SAFE_MODE(*pObjectValue = VM_VALUE_NULL);
@@ -9963,7 +9989,7 @@ SUB_SET_PROPERTY:
       VM_ASSERT(vm, Value_isShortPtr(MVM_GET_LOCAL(vObjectValue)));
       uint8_t* p = ShortPtr_decode(vm, MVM_GET_LOCAL(vObjectValue));
       uint16_t header = readAllocationHeaderWord(p);
-      uint16_t length = vm_getAllocationSizeExcludingHeaderFromHeaderWord(header);
+      uint16_t length = vm_getUint8ArrayLengthFromHeaderWord(header);
 
       if (!Value_isVirtualInt14(MVM_GET_LOCAL(vPropertyName))) {
         CODE_COVERAGE_ERROR_PATH(595); // Not hit
@@ -10719,11 +10745,11 @@ static const TeEqualityAlgorithm equalityAlgorithmByTypeCode[TC_END] = {
   EA_COMPARE_STRING,             // TC_REF_INTERNED_STRING    = 0x4
   EA_COMPARE_REFERENCE,          // TC_REF_FUNCTION           = 0x5
   EA_COMPARE_PTR_VALUE_AND_TYPE, // TC_REF_HOST_FUNC          = 0x6
-  EA_COMPARE_PTR_VALUE_AND_TYPE, // TC_REF_BIG_INT            = 0x7
+  EA_COMPARE_PTR_VALUE_AND_TYPE, // TC_REF_UINT8_ARRAY        = 0x7
   EA_COMPARE_REFERENCE,          // TC_REF_SYMBOL             = 0x8
   EA_NONE,                       // TC_REF_CLASS              = 0x9
   EA_NONE,                       // TC_REF_VIRTUAL            = 0xA
-  EA_NONE,                       // TC_REF_RESERVED_1         = 0xB
+  EA_NONE,                       // TC_REF_UINT8_ARRAY_EXT    = 0xB (normalized to 0x7)
   EA_COMPARE_REFERENCE,          // TC_REF_PROPERTY_LIST      = 0xC
   EA_COMPARE_REFERENCE,          // TC_REF_ARRAY              = 0xD
   EA_COMPARE_REFERENCE,          // TC_REF_FIXED_LENGTH_ARRAY = 0xE
@@ -11256,30 +11282,36 @@ static void vm_free(VM* vm, void* ptr) {
 static mvm_TeError vm_uint8ArrayNew(VM* vm, Value* slot) {
   CODE_COVERAGE(344); // Hit
 
-  uint16_t size = *slot;
-  if (!Value_isVirtualUInt12(size)) {
+  Value sizeValue = *slot;
+  if (!Value_isVirtualInt14(sizeValue)) {
     CODE_COVERAGE_ERROR_PATH(345); // Not hit
     return vm_newError(vm, MVM_E_INVALID_UINT8_ARRAY_LENGTH);
   }
-  size = VirtualInt14_decode(vm, size);
+  int16_t signedSize = VirtualInt14_decode(vm, sizeValue);
+  if (signedSize < 0 || signedSize > MAX_UINT8_ARRAY_SIZE) {
+    CODE_COVERAGE_ERROR_PATH(345); // Not hit
+    return vm_newError(vm, MVM_E_INVALID_UINT8_ARRAY_LENGTH);
+  }
+  uint16_t size = (uint16_t)signedSize;
 
   uint8_t* p = mvm_allocate(vm, size, TC_REF_UINT8_ARRAY);
   *slot = ShortPtr_encode(vm, p);
-  memset(p, 0, size);
+  memset(p, 0, size == 0 ? 2 : size);
 
   return MVM_E_SUCCESS;
 }
 
 mvm_Value mvm_uint8ArrayFromBytes(mvm_VM* vm, const uint8_t* data, size_t sizeBytes) {
   CODE_COVERAGE(346); // Hit
-  if (sizeBytes >= (MAX_ALLOCATION_SIZE + 1)) {
+  if (sizeBytes > MAX_UINT8_ARRAY_SIZE) {
     MVM_FATAL_ERROR(vm, MVM_E_ALLOCATION_TOO_LARGE);
     return VM_VALUE_UNDEFINED;
   }
   // Note: mvm_allocate will also check the size
   uint8_t* p = mvm_allocate(vm, (uint16_t)sizeBytes, TC_REF_UINT8_ARRAY);
   Value result = ShortPtr_encode(vm, p);
-  memcpy(p, data, sizeBytes);
+  if (sizeBytes) memcpy(p, data, sizeBytes);
+  else memset(p, 0, 2);
   return result;
 }
 
@@ -11304,7 +11336,7 @@ mvm_TeError mvm_uint8ArrayToBytes(mvm_VM* vm, mvm_Value uint8ArrayValue, uint8_t
     return vm_newError(vm, MVM_E_TYPE_ERROR);
   }
 
-  size_t size = (size_t)vm_getAllocationSizeExcludingHeaderFromHeaderWord(headerWord);
+  size_t size = (size_t)vm_getUint8ArrayLengthFromHeaderWord(headerWord);
   *out_size = size;
   *out_data = MVM_POINTER_SET_BOUNDS(p, size);
 

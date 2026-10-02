@@ -16,7 +16,7 @@
 #include <stdint.h>
 
 #define MVM_ENGINE_MAJOR_VERSION 9  /* aka MVM_BYTECODE_VERSION */
-#define MVM_ENGINE_MINOR_VERSION 1  /* aka MVM_ENGINE_VERSION */
+#define MVM_ENGINE_MINOR_VERSION 2  /* aka MVM_ENGINE_VERSION */
 
 typedef uint16_t mvm_Value;
 typedef uint16_t mvm_VMExportID;
@@ -464,9 +464,9 @@ MVM_EXPORT mvm_Value mvm_newInt32(mvm_VM* vm, int32_t value);
 MVM_EXPORT mvm_Value mvm_newString(mvm_VM* vm, const char* valueUtf8, size_t sizeBytes);
 
 /**
- * A Uint8Array in Microvium is an efficient buffer of bytes. It is mutable but
- * cannot be resized. The new Uint8Array created by this method will contain a
- * *copy* of the supplied data.
+ * A Microvium Uint8Array is a mutable, fixed-length buffer of bytes. The new
+ * Uint8Array created by this method will contain a *copy* of the supplied
+ * data. The maximum length is 8191 bytes.
  *
  * WARNING: the result is eligible for garbage collection the next time the VM
  * has control. See `doc\handles-and-garbage-collection.md` for more information.
@@ -480,10 +480,10 @@ MVM_EXPORT mvm_Value mvm_uint8ArrayFromBytes(mvm_VM* vm, const uint8_t* data, si
 
 /**
  * Given a Uint8Array, this will give a pointer to its data and its size (in
- * bytes).
+ * bytes). Arrays may contain up to 8191 bytes.
  *
  * Warning: The data pointer should be considered invalid on the next call to
- * any of the Microvium API methods, since a garbage can move the data. It is
+ * any of the Microvium API methods, since garbage collection can move the data. It is
  * recommended to call this method again each time you need the pointer.
  *
  * The returned pointer can also be used to mutate the buffer, with caution.

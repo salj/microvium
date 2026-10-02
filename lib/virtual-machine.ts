@@ -8,7 +8,7 @@ import { stringifyFunction, stringifyAllocation, stringifyValue, stringifyUnit }
 import deepFreeze from 'deep-freeze';
 import { SnapshotClass } from './snapshot';
 import { SynchronousWebSocketServer } from './synchronous-ws-server';
-import { isSInt32, isUInt8, mvm_TeType } from './runtime-types';
+import { isSInt32, isUInt8, mvm_TeType, MAX_UINT8_ARRAY_LENGTH } from './runtime-types';
 import { encodeSnapshot } from './encode-snapshot';
 import { maxOperandCount, minOperandCount } from './il-opcodes';
 import { binaryNumeric, compareNumeric, convertNumeric, NumericError, numericTypeName, unaryNumeric } from './numeric-types';
@@ -1139,7 +1139,7 @@ export class VirtualMachine {
     if ((length | 0) !== length) {
       this.runtimeError('New Uint8Array must be created with integer length');
     }
-    if (length < 0 || length > 0xFFF-3) {
+    if (length < 0 || length > MAX_UINT8_ARRAY_LENGTH) {
       this.runtimeError('Uint8Array length out of range');
     }
     this.push(this.newUint8Array(length));

@@ -14,10 +14,14 @@ Audited outputs:
 | `dist-web/compiler-entry.js` | Compiler JavaScript and the npm packages listed below |
 | `dist-web/compiler.wasm` | Compiler JavaScript, QuickJS-NG, Emscripten sysroot libraries, and standalone-WASM support; no imports |
 | `dist-web/microvium-runtime.wasm` | Microvium runtime and Emscripten sysroot math objects; imports only memory and `mvm_wasm_host_import` |
+| `dist-native/mvmc` | Compiler JavaScript embedded as QuickJS-NG bytecode, QuickJS-NG, and the Microvium C runtime; native C runtime libraries |
 | npm package `microvium` (`microvium-compile` bin) | Node CLI adapter and `dist-web/compiler-entry.js`; no WASM runtime dependency |
 
-The compiler WASM embeds its JavaScript compiler in QuickJS-NG. Emscripten is
-a build tool; its linked sysroot objects are included in `compiler.wasm`.
+The compiler WASM embeds its JavaScript compiler in QuickJS-NG. `mvmc` embeds
+the same compiler bundle as QuickJS-NG bytecode and links the native Microvium
+runtime directly. Every dependency listed below as part of the compiler JS
+bundle is also embedded in `dist-native/mvmc` as compiler bytecode. Emscripten
+is a build tool; its linked sysroot objects are included in `compiler.wasm`.
 `dist-web/app.js` and `dist-web/microvium-runtime.wasm` are built by
 `npm run build:web-demo`. The build scripts emit link maps under ignored build
 directories so the linked sysroot objects can be audited.
@@ -45,11 +49,11 @@ projects use identical terms; retain each project's copyright attribution.
 | `lower-case` | 2.0.1 | `licenses/MIT.txt` | compiler JS bundle |
 | musl libc | Emscripten sysroot version | `licenses/MIT.txt` | `compiler.wasm`, `microvium-runtime.wasm` |
 | `no-case` | 3.0.3 | `licenses/MIT.txt` | compiler JS bundle |
-| QuickJS-NG | 0.15.1 | `wasm-build/quickjs-ng/LICENSE` | `compiler.wasm` |
+| QuickJS-NG | 0.15.1 | `wasm-build/quickjs-ng/LICENSE` | `compiler.wasm`, `dist-native/mvmc` |
 | `smart-buffer` | 4.2.0 | `licenses/MIT.txt` | compiler JS bundle |
 | `to-fast-properties` | 2.0.0 | `licenses/MIT.txt` | compiler JS bundle |
 | `to-single-quotes` | 3.0.0 | `licenses/MIT.txt` | compiler JS bundle |
-| Unicode Character Database | 17.0.0 | `licenses/Unicode-3.0.txt` | `compiler.wasm` |
+| Unicode Character Database | 17.0.0 | `licenses/Unicode-3.0.txt` | `compiler.wasm`, `dist-native/mvmc` |
 | compiler-rt | Emscripten sysroot version | Apache-2.0 with LLVM exception; `licenses/Apache-2.0.txt`, `licenses/LLVM-exception.txt` | `compiler.wasm` |
 | dlmalloc | Emscripten sysroot version | CC0; `licenses/CC0-1.0.txt` | `compiler.wasm` |
 
@@ -57,12 +61,14 @@ QuickJS-NG's generated Unicode tables are also covered by the Unicode license.
 The compiler link map includes Emscripten's `libc.a`, `libcompiler_rt.a`,
 `libdlmalloc.a`, and standalone-WASM support archive. The runtime link map uses
 the math objects from `libc.a`; it does not link the compiler allocator or
-compiler-rt archives. The MIT license applies to Emscripten and musl code.
+compiler-rt archives. The MIT license applies to Emscripten and musl code. A
+static `mvmc` build may also include the C library selected by the host
+toolchain; retain that toolchain's applicable notices when redistributing it.
 
-Microvium code in `microvium-runtime.wasm` is under this repository's MIT
-license. The license files are not appended to generated WASM or JavaScript;
-ship this document and the referenced license texts with redistributed
-artifacts.
+Microvium code in `microvium-runtime.wasm` and `dist-native/mvmc` is under this
+repository's MIT license. The license files are not appended to generated WASM,
+native binaries, or JavaScript; ship this document and the referenced license
+texts with redistributed artifacts.
 
 ## Required copyright and attribution notices
 
@@ -107,8 +113,9 @@ of its name in promotion without prior written authorization.
 
 ## Scope and source notes
 
-The CLI, Emscripten executable, esbuild, and test tools are build-time code and
-are not included as runtime dependencies. The npm package uses the JavaScript
+The existing Node CLI, Emscripten executable, esbuild, and test tools are
+build-time code and are not included as runtime dependencies. `mvmc` is a
+separate native build target. The npm package uses the JavaScript
 compiler bundle directly; it no longer ships Javy, the browser WASI shim, Rust
 runtime crates, or a Wasmer/Wasmtime launcher. The WebAssembly compiler has no
 WASI imports and needs no WASI host.

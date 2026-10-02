@@ -1,7 +1,7 @@
 /*---
 description: Tests of Uint8Array
 runExportedFunction: 0
-assertionCount: 10
+assertionCount: 17
 ---*/
 vmExport(0, run);
 
@@ -14,6 +14,21 @@ assertEqual(buf1.length, 5)
 assertEqual(buf1[0], 1)
 assertEqual(buf1[4], 5)
 assertEqual(buf1[5], undefined)
+
+const largeBuf = Microvium.newUint8Array(8191)
+largeBuf[0] = 11
+largeBuf[4095] = 12
+largeBuf[4096] = 13
+largeBuf[8190] = 14
+assertEqual(largeBuf.length, 8191)
+assertEqual(largeBuf[0], 11)
+assertEqual(largeBuf[4095], 12)
+assertEqual(largeBuf[4096], 13)
+assertEqual(largeBuf[8190], 14)
+
+const emptyBuf = Microvium.newUint8Array(0)
+assertEqual(emptyBuf.length, 0)
+assertEqual(emptyBuf[0], undefined)
 
 function run() {
   // Reading from compile-time Uint8Array at runtime
@@ -35,5 +50,20 @@ function run() {
   assertEqual(buf2[1], 101)
   assertEqual(buf2[2], 102)
   assertEqual(buf2[3], undefined)
-}
 
+  // Runtime allocations use the same extended header encoding.
+  const largeRuntimeBuf = Microvium.newUint8Array(8191)
+  largeRuntimeBuf[0] = 21
+  largeRuntimeBuf[4095] = 22
+  largeRuntimeBuf[4096] = 23
+  largeRuntimeBuf[8190] = 24
+  assertEqual(largeRuntimeBuf.length, 8191)
+  assertEqual(largeRuntimeBuf[0], 21)
+  assertEqual(largeRuntimeBuf[4095], 22)
+  assertEqual(largeRuntimeBuf[4096], 23)
+  assertEqual(largeRuntimeBuf[8190], 24)
+
+  const emptyRuntimeBuf = Microvium.newUint8Array(0)
+  assertEqual(emptyRuntimeBuf.length, 0)
+  assertEqual(emptyRuntimeBuf[0], undefined)
+}

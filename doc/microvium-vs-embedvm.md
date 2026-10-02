@@ -52,13 +52,13 @@ Both EmbedVM and Microvium will run fine on 32-bit or 64-bit hosts, but this wil
 
 The biggest advantage of Microvium over EmbedVM is the feature set. Many of the [supported language features](./supported-language.md) of Microvium are not available in EmbedVM. Microvium is based on a subset of JavaScript, and brings the following JavaScript features which EmbedVM does not have:
 
-  - [Integers larger than 16-bit](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number). Up to 32-bit integers are supported with high performance, after which the value will overflow to a 64-bit float (if floats are enabled for the engine).
+  - Ordinary Numbers plus explicit `f32`, `f64`, and signed or unsigned integer flavors from 1 through 64 bits. See [Numeric types](./numeric-types.md) for precision, conversion, and overflow behavior.
   - Strings and real booleans
   - Objects and arrays
   - First-class module support (`import`/`export`) without using an external preprocessor.
   - Nested functions and closures
 
-In addition to the language features, Microvium supports the [snapshotting concept](./concepts.md) which allows the script to be partially evaluated at compile time. This feature can be used to pre-compute lookup tables, or to bring in external resources at compile time. This can greatly improve your workflow.
+In addition to the language features, Microvium supports the [snapshotting concept](./concepts.md), which allows the script to be partially evaluated at compile time. This can pre-compute lookup tables or consume resource data supplied by the build host.
 
 ## Documentation
 
@@ -85,7 +85,6 @@ See [memory-usage.md](./native-host/memory-usage.md) for more details.
 No scripting engine will likely be very performant on a microcontroller. For performance-critical tasks, it will likely be better to code natively.
 
 While I have not benchmarked it, Microvium is likely to be slower than EmbedVM for many types of scripts because Microvium is doing more work to manage dynamic typing and different memory spaces. Some tasks might be more efficient in Microvium because their representation in EmbedVM's limited feature set may be unwieldy.
-
 
 
 

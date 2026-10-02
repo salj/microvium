@@ -76,7 +76,11 @@ Something to note is that mJS `mjs_exec_file` and its builtin `load` function re
 
 ## Standard Library
 
-Both Microvium and mJS claim to *not* have a standard library, but mJS comes with a few additional functions baked in, such as `JSON.parse`. Microvium doesn't really come with any built-in functions.
+Both Microvium and mJS have small runtime libraries rather than the full
+ECMAScript standard library. Microvium's current globals and methods are listed
+in [Supported builtins](./supported-builtins.md). `JSON.parse` and
+`JSON.stringify` are available in its default compile-time host setup, not as
+runtime library functions.
 
 ## Language Features
 
@@ -144,18 +148,21 @@ In Microvium, you can write compile-time code alongside runtime code (this is re
 
   1. When the script runs on the device, it's already in an initialized state and so there is no boot-up time -- the "cold start" time of a Microvium VM is very fast. This is especially relevant if the script needs to generate any lookup tables or other compute-expensive operations -- these operations will run at compile time instead of runtime.
 
-  2. The initialization code may access other project files on the development machine or build server, allowing it to do things like reading dependent configuration files or writing code-generated files to be used in other places.
+  2. The initialization code may consume data and module source provided by
+     the build host. The compiler VM has no filesystem API; a host adapter can
+     read inputs before passing their contents to the compiler. Files generated
+     from compile-time results are written by the surrounding build tool.
 
 
 ## C Interrop (FFI)
 
-mJS makes a point of saying that it requires "no glue code". As long as your C function has a signature that's one of a set of pre-supported signatures, you can use syntax like `ffi('double floor(double)')` to get a reference to the C function.
-
-Microvium does not have this, but Microvium's snapshotting feature means that you could write a similar `ffi` library yourself in JavaScript (and maybe this will be built-in in future). The reason this is possible is because the top-level Microvium code has access to the host on the compiler's machine, so the JavaScript code can code-generate glue code at compile time and then still use the returned references at runtime (see [concepts.md](C:\Projects\microvium\doc\concepts.md)).
-
-This is more powerful than mJS's FFI because it can really work with arbitrary C signatures, and it can be customized more easily (e.g. code-generating logging and metrics at the FFI boundary). However, it is of course a "do-it-yourself" exercise at this point, so mJS is better out-of-the-box in this regard.
-
-Note however that mJS supports passing object and function values across the FFI boundary, whereas Microvium does not.
+mJS provides a C-signature declaration form such as `ffi('double floor(double)')`.
+Microvium provides numeric-ID imports and exports, plus
+[named FFI](../docs/named-ffi.md) with symbol names and fixed `Value`
+signatures. C handlers still convert between `mvm_Value` and application C
+types. The C API can pass Microvium values, including arrays, through those
+handlers; array elements can be read with a streaming iterator. See the
+[C FFI guide](./ffi-guide.md).
 
 
 ## Maturity and Active Development
@@ -174,7 +181,9 @@ Microvium is currently licensed under the MIT license, while mJS is under GPLv2.
 
   - Microvium has a number of features that mJS doesn't have: closures (nested functions), ES6 modules, and snapshotting.
 
-  - mJS has a number of builtin functions that Microvium doesn't have - most notably `print`, `ffi`, `s2o`, `JSON.stringify`, `JSON.parse` and `Object.create`
+  - Their builtin APIs differ. mJS provides functions such as `print`, `ffi`,
+    `s2o`, `JSON.stringify`, `JSON.parse`, and `Object.create`; Microvium has a
+    smaller set documented in [Supported builtins](./supported-builtins.md).
 
   - Microvium only runs the parser at compile time, while mJS has the parser available at compile time and runtime.
 
@@ -183,4 +192,3 @@ Microvium is currently licensed under the MIT license, while mJS is under GPLv2.
   - It may be easier to get started with the documentation in Microvium
 
   - Microvium is under active development and getting new features and fixes over time. mJS is more stable and has not had new development in many years.
-

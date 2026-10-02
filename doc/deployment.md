@@ -23,7 +23,9 @@ First, bump the version number in [package.json](../package.json). I don't commi
 
 Consider bumping the `MVM_ENGINE_MAJOR_VERSION` and `MVM_ENGINE_MINOR_VERSION` in `microvium.h`. I bump the major version if there is a breaking change to the bytecode, such that a new version of the engine is required to run it. I bump the minor version if there is a change to the engine but no change to the bytecode, so the new engine is compatible with the old bytecode.
 
-I think going forward I will make the package version the same as the engine version, for simplicity, so you know what version of the compiler comes with what version of the engine and compiles what version of bytecode.
+The npm package version and bytecode engine version are separate numbers. Do
+not assume they match. This prototype's package version is intentionally left
+unchanged; coordinate versioning in a dedicated release change.
 
 Build with the new version numbers:
 

@@ -45,9 +45,9 @@ export function ffiSignatureKey(signature: FFISignature): string {
 }
 
 /**
- * Encode the v9 named-linking section. The symbol stream is sorted by UTF-8
- * byte order; each record can copy a prefix from any earlier decoded byte.
- * Call slots refer to symbols and structurally interned signatures by index.
+ * Encode the prototype named-linking table. Counts and indexes use canonical
+ * 16-bit varints. Symbols are sorted by UTF-8 byte order and can copy a prefix
+ * from anywhere in the earlier decoded symbol stream.
  */
 export function encodeFFIMetadata(imports: NamedImport[], exports: NamedExport[]): Uint8Array {
   const unique = new Map<string, Uint8Array>();
@@ -67,25 +67,42 @@ export function encodeFFIMetadata(imports: NamedImport[], exports: NamedExport[]
   const signatureIndex = new Map(signatures.map(([key], i) => [key, i]));
 
   const writer = new ByteWriter();
-  writer.u16(symbols.length);
-  writer.u16(signatures.length);
-  writer.u16(imports.length);
-  writer.u16(exports.length);
+  writer.varUint16(symbols.length);
+  writer.varUint16(signatures.length);
+  writer.varUint16(imports.length);
+  writer.varUint16(exports.length);
 
-  let decoded = new Uint8Array(0);
+  const decoded = new Uint8Array(0xFFFF);
+  let decodedLength = 0;
   for (const { bytes } of symbols) {
-    const { start, length } = longestBackreference(decoded, bytes);
-    const tail = bytes.subarray(length);
-    writer.u16(start);
-    writer.u16(length);
-    writer.u16(tail.length);
-    writer.bytes(tail);
-    decoded = concat(decoded, bytes);
-    if (decoded.length > 0xFFFF) throw new Error('Named FFI symbol stream exceeds 65535 decoded bytes');
+    const literalSize = 1 + varUint16Size(bytes.length) + bytes.length;
+    const reference = longestBackreference(decoded.subarray(0, decodedLength), bytes);
+    const tailLength = bytes.length - reference.length;
+    const referenceSize = reference.length === 0
+      ? Infinity
+      : varUint16Size(reference.length) + varUint16Size(reference.start) + varUint16Size(tailLength) + tailLength;
+
+    if (referenceSize < literalSize) {
+      writer.varUint16(reference.length);
+      writer.varUint16(reference.start);
+      writer.varUint16(tailLength);
+      writer.bytes(bytes.subarray(reference.length));
+    } else {
+      // A zero prefix length is the literal form. It needs no start offset.
+      writer.varUint16(0);
+      writer.varUint16(bytes.length);
+      writer.bytes(bytes);
+    }
+
+    if (decodedLength + bytes.length > decoded.length) throw new Error('Named FFI symbol stream exceeds 65535 decoded bytes');
+    decoded.set(bytes, decodedLength);
+    decodedLength += bytes.length;
   }
 
   for (const [, signature] of signatures) {
-    writer.u16(signature.parameters.length + 2);
+    if (signature.parameters.length > 255 || signature.parameters.some(t => t !== 'Value') || signature.result !== 'Value') {
+      throw new Error('Named FFI currently accepts at most 255 parameters, all typed `Value`');
+    }
     writer.u8(signature.parameters.length);
     for (const _parameter of signature.parameters) writer.u8(0); // Value
     writer.u8(0); // Value result type
@@ -96,15 +113,15 @@ export function encodeFFIMetadata(imports: NamedImport[], exports: NamedExport[]
     compareBytes(encoder.encode(a.importName), encoder.encode(b.importName)));
   const orderedExports = [...exports].sort((a, b) => compareBytes(encoder.encode(a.exportName), encoder.encode(b.exportName)));
   for (const item of orderedImports) {
-    writer.u16(item.hostFunctionID);
-    writer.u16(required(symbolIndex.get(item.moduleName)));
-    writer.u16(required(symbolIndex.get(item.importName)));
-    writer.u16(required(signatureIndex.get(ffiSignatureKey(item.signature))));
+    writer.varUint16(item.hostFunctionID);
+    writer.varUint16(required(symbolIndex.get(item.moduleName)));
+    writer.varUint16(required(symbolIndex.get(item.importName)));
+    writer.varUint16(required(signatureIndex.get(ffiSignatureKey(item.signature))));
   }
   for (const item of orderedExports) {
-    writer.u16(item.exportID);
-    writer.u16(required(symbolIndex.get(item.exportName)));
-    writer.u16(required(signatureIndex.get(ffiSignatureKey(item.signature))));
+    writer.varUint16(item.exportID);
+    writer.varUint16(required(symbolIndex.get(item.exportName)));
+    writer.varUint16(required(signatureIndex.get(ffiSignatureKey(item.signature))));
   }
 
   return writer.finish();
@@ -113,19 +130,19 @@ export function encodeFFIMetadata(imports: NamedImport[], exports: NamedExport[]
 /** Decode and validate a complete named-linking section. */
 export function decodeFFIMetadata(data: Uint8Array): { imports: NamedImport[]; exports: NamedExport[] } {
   const reader = new ByteReader(data);
-  const symbolCount = reader.u16();
-  const signatureCount = reader.u16();
-  const importCount = reader.u16();
-  const exportCount = reader.u16();
+  const symbolCount = reader.varUint16();
+  const signatureCount = reader.varUint16();
+  const importCount = reader.varUint16();
+  const exportCount = reader.varUint16();
 
   const symbols: string[] = [];
   const decoded = new Uint8Array(0xFFFF);
   let decodedLength = 0;
   let previousSymbolBytes: Uint8Array | undefined;
   for (let i = 0; i < symbolCount; i++) {
-    const backrefStart = reader.u16();
-    const backrefLength = reader.u16();
-    const tailLength = reader.u16();
+    const backrefLength = reader.varUint16();
+    const backrefStart = backrefLength === 0 ? 0 : reader.varUint16();
+    const tailLength = reader.varUint16();
     if (backrefStart + backrefLength > decodedLength) throw new Error('Invalid named FFI backreference');
     const start = decodedLength;
     for (let j = 0; j < backrefLength; j++) decoded[decodedLength++] = decoded[backrefStart + j];
@@ -143,24 +160,22 @@ export function decodeFFIMetadata(data: Uint8Array): { imports: NamedImport[]; e
 
   const signatures: FFISignature[] = [];
   for (let i = 0; i < signatureCount; i++) {
-    const size = reader.u16();
-    const record = new ByteReader(reader.bytes(size));
-    const parameterCount = record.u8();
+    const parameterCount = reader.u8();
     const parameters: FFIValueType[] = [];
     for (let j = 0; j < parameterCount; j++) {
-      if (record.u8() !== 0) throw new Error('Unknown named FFI parameter type');
+      if (reader.u8() !== 0) throw new Error('Unknown named FFI parameter type');
       parameters.push('Value');
     }
-    if (record.u8() !== 0 || !record.atEnd()) throw new Error('Invalid named FFI signature');
+    if (reader.u8() !== 0) throw new Error('Unknown named FFI result type');
     signatures.push({ parameters, result: 'Value' });
   }
 
   const imports: NamedImport[] = [];
   for (let i = 0; i < importCount; i++) {
-    const hostFunctionID = reader.u16();
-    const moduleIndex = reader.u16();
-    const nameIndex = reader.u16();
-    const sigIndex = reader.u16();
+    const hostFunctionID = reader.varUint16();
+    const moduleIndex = reader.varUint16();
+    const nameIndex = reader.varUint16();
+    const sigIndex = reader.varUint16();
     imports.push({
       hostFunctionID,
       moduleName: required(symbols[moduleIndex]),
@@ -170,9 +185,9 @@ export function decodeFFIMetadata(data: Uint8Array): { imports: NamedImport[]; e
   }
   const exports: NamedExport[] = [];
   for (let i = 0; i < exportCount; i++) {
-    const exportID = reader.u16();
-    const nameIndex = reader.u16();
-    const sigIndex = reader.u16();
+    const exportID = reader.varUint16();
+    const nameIndex = reader.varUint16();
+    const sigIndex = reader.varUint16();
     exports.push({
       exportID,
       exportName: required(symbols[nameIndex]),
@@ -201,26 +216,30 @@ export function decodeFFIMetadataFromSnapshot(data: Uint8Array): { imports: Name
 }
 
 function longestBackreference(history: Uint8Array, value: Uint8Array): { start: number; length: number } {
-  for (let length = value.length; length > 0; length--) {
-    outer: for (let start = 0; start + length <= history.length; start++) {
-      for (let i = 0; i < length; i++) if (history[start + i] !== value[i]) continue outer;
-      return { start, length };
+  let bestStart = 0;
+  let bestLength = 0;
+  for (let start = 0; start < history.length; start++) {
+    let length = 0;
+    while (start + length < history.length && length < value.length && history[start + length] === value[length]) {
+      length++;
+    }
+    if (length > bestLength) {
+      bestStart = start;
+      bestLength = length;
     }
   }
-  return { start: 0, length: 0 };
+  return { start: bestStart, length: bestLength };
+}
+
+function varUint16Size(value: number): number {
+  if (!Number.isInteger(value) || value < 0 || value > 0xFFFF) throw new Error('Named FFI field exceeds 65535');
+  return value < 0x80 ? 1 : value < 0x4000 ? 2 : 3;
 }
 
 function compareBytes(a: Uint8Array, b: Uint8Array): number {
   const length = Math.min(a.length, b.length);
   for (let i = 0; i < length; i++) if (a[i] !== b[i]) return a[i] - b[i];
   return a.length - b.length;
-}
-
-function concat(a: Uint8Array, b: Uint8Array): Uint8Array {
-  const result = new Uint8Array(a.length + b.length);
-  result.set(a);
-  result.set(b, a.length);
-  return result;
 }
 
 function required<T>(value: T | undefined): T {
@@ -231,7 +250,14 @@ function required<T>(value: T | undefined): T {
 class ByteWriter {
   private out: number[] = [];
   u8(value: number) { this.out.push(value & 0xFF); }
-  u16(value: number) { this.u8(value); this.u8(value >>> 8); }
+  varUint16(value: number) {
+    varUint16Size(value);
+    while (value >= 0x80) {
+      this.u8((value & 0x7F) | 0x80);
+      value >>>= 7;
+    }
+    this.u8(value);
+  }
   bytes(value: Uint8Array) { for (const byte of value) this.u8(byte); }
   finish() { return Uint8Array.from(this.out); }
 }
@@ -243,7 +269,20 @@ class ByteReader {
     if (this.offset >= this.data.length) throw new Error('Truncated named FFI table');
     return this.data[this.offset++];
   }
-  u16() { return this.u8() | (this.u8() << 8); }
+  varUint16() {
+    let value = 0;
+    for (let i = 0; i < 3; i++) {
+      const byte = this.u8();
+      value |= (byte & 0x7F) << (i * 7);
+      if ((byte & 0x80) === 0) {
+        if ((i > 0 && (byte & 0x7F) === 0) || value > 0xFFFF) {
+          throw new Error('Invalid named FFI varint');
+        }
+        return value;
+      }
+    }
+    throw new Error('Invalid named FFI varint');
+  }
   bytes(length: number) {
     if (this.offset + length > this.data.length) throw new Error('Truncated named FFI table');
     const result = this.data.subarray(this.offset, this.offset + length);

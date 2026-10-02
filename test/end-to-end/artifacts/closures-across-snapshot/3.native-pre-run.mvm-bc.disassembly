@@ -1,4 +1,4 @@
-Bytecode size: 88 B
+Bytecode size: 84 B
 
 Addr    Size
 ==== =======
@@ -7,8 +7,8 @@ Addr    Size
 0001       1     headerSize: 28
 0002       1     requiredEngineVersion: 0
 0003       1     numericOptions: 0
-0004       2     bytecodeSize: 88
-0006       2     expectedCRC: e4fa
+0004       2     bytecodeSize: 84
+0006       2     expectedCRC: 91ff
 0008       2     requiredFeatureFlags: 3
 000a       2     BCS_IMPORT_TABLE: 001c
 000c       2     BCS_EXPORT_TABLE: 001e
@@ -17,14 +17,14 @@ Addr    Size
 0012       2     BCS_STRING_TABLE: 0030
 0014       2     BCS_ROM: 0030
 0016       2     BCS_FFI_TABLE: 0042
-0018       2     BCS_GLOBALS: 004a
-001a       2     BCS_HEAP: 0052
+0018       2     BCS_GLOBALS: 0046
+001a       2     BCS_HEAP: 004e
 001c    2  - # Import Table
 001c       2     [0]: 3
 001e    4  - # Export Table
-001e       4     [0]: &004c
+001e       4     [0]: &0048
 0022    e  - # Builtins
-0022       2     [BIN_INTERNED_STRINGS]: &0050
+0022       2     [BIN_INTERNED_STRINGS]: &004c
 0024       2     [BIN_ARRAY_PROTO]: undefined
 0026       2     [BIN_STR_PROTOTYPE]: undefined
 0028       2     [BIN_ASYNC_CONTINUE]: undefined
@@ -47,14 +47,14 @@ Addr    Size
 003e       2             Call(count 3, flag true)
 0040       1             Literal(lit undefined)
 0041       1             Return()
-0042       8 <unused>
-004a    8  - # Globals
-004a       2     [0]: &0034
-004c       2     Handle: &0054
-004e       2     Handle: deleted
-0050       2     Handle: undefined
-0052    6  - # GC allocations
-0052       2     Header [Size: 4, Type: TC_REF_CLOSURE]
-0054    4  -     # TsClosure
-0054       2         closure[0]: &0038
-0056       2         closure[1]: 1
+0042       4 <unused>
+0046    8  - # Globals
+0046       2     [0]: &0034
+0048       2     Handle: &0050
+004a       2     Handle: deleted
+004c       2     Handle: undefined
+004e    6  - # GC allocations
+004e       2     Header [Size: 4, Type: TC_REF_CLOSURE]
+0050    4  -     # TsClosure
+0050       2         closure[0]: &0038
+0052       2         closure[1]: 1

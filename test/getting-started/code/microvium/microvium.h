@@ -233,6 +233,29 @@ typedef struct mvm_TsMemoryStats {
  */
 typedef struct mvm_Handle { mvm_Value _value; struct mvm_Handle* _next; } mvm_Handle;
 
+/**
+ * A streaming cursor over a Microvium array. Initialize to zero before the
+ * first call to mvm_arrayIteratorInit. The struct owns two GC handles and
+ * must not be copied while initialized. Release it before freeing the VM.
+ *
+ * The current value is valid until the next iterator call or release. Clone
+ * it into a separate handle if it needs to survive another iteration step.
+ */
+typedef struct mvm_TsArrayIterator {
+  mvm_Handle _array;
+  mvm_Handle _value;
+  uint16_t _nextIndex;
+  uint8_t _state;
+} mvm_TsArrayIterator;
+
+/** Create an empty, mutable array in an initialized handle. */
+MVM_EXPORT mvm_TeError mvm_newArray(mvm_VM* vm, mvm_Handle* out_array);
+/** Append a value to a mutable array. Both values must be initialized handles.
+ * The value handle can be updated if growing the array triggers garbage collection. */
+MVM_EXPORT mvm_TeError mvm_arrayPush(mvm_VM* vm, mvm_Handle* array, mvm_Handle* value);
+/** Read the current logical length without allocating. */
+MVM_EXPORT mvm_TeError mvm_getArrayLength(mvm_VM* vm, mvm_Value array, uint16_t* out_length);
+
 #include "microvium_port.h"
 
 #ifdef __cplusplus
@@ -265,6 +288,9 @@ MVM_EXPORT mvm_TeError mvm_restore(mvm_VM** result, MVM_LONG_PTR_TYPE snapshotBy
  * no numeric imports.
  */
 MVM_EXPORT mvm_TeError mvm_restoreNamed(mvm_VM** result, MVM_LONG_PTR_TYPE snapshotBytecode, size_t bytecodeSize, void* context, mvm_TfResolveImport resolveImport);
+/** Enumerate every export-table ID, including named FFI exports. */
+MVM_EXPORT mvm_TeError mvm_getExportCount(mvm_VM* vm, uint16_t* out_count);
+MVM_EXPORT mvm_TeError mvm_getExportID(mvm_VM* vm, uint16_t index, mvm_VMExportID* out_id);
 MVM_EXPORT mvm_TeError mvm_getNamedImportCount(mvm_VM* vm, uint16_t* out_count);
 MVM_EXPORT mvm_TeError mvm_getNamedExportCount(mvm_VM* vm, uint16_t* out_count);
 /** Scratch size is the full decoded symbol stream plus one maximum-size signature. */
@@ -308,6 +334,22 @@ MVM_EXPORT mvm_TeError mvm_releaseHandle(mvm_VM* vm, mvm_Handle* handle);
 static inline mvm_Value mvm_handleGet(const mvm_Handle* handle) { return handle->_value; }
 static inline mvm_Value* mvm_handleAt(mvm_Handle* handle) { return &handle->_value; }
 static inline void mvm_handleSet(mvm_Handle* handle, mvm_Value value) { handle->_value = value; }
+
+/**
+ * Start a streaming iteration over an array value. The iterator must be zero
+ * initialized and must be released before it is initialized again.
+ */
+MVM_EXPORT mvm_TeError mvm_arrayIteratorInit(mvm_VM* vm, mvm_TsArrayIterator* iterator, mvm_Value array);
+/**
+ * Advance the iterator by one element. The current value is available through
+ * mvm_arrayIteratorValue. Iteration reads the array's current length and slot
+ * values on each step; appends before completion are visible, and shrinking
+ * the array can end iteration early. A hole yields undefined.
+ */
+MVM_EXPORT mvm_TeError mvm_arrayIteratorNext(mvm_VM* vm, mvm_TsArrayIterator* iterator, bool* out_done);
+/** Release both GC handles owned by the iterator. */
+MVM_EXPORT mvm_TeError mvm_arrayIteratorRelease(mvm_VM* vm, mvm_TsArrayIterator* iterator);
+static inline mvm_Value mvm_arrayIteratorValue(const mvm_TsArrayIterator* iterator) { return mvm_handleGet(&iterator->_value); }
 
 /**
  * Roughly like the `typeof` operator in JS, except with distinct values for

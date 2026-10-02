@@ -1,4 +1,4 @@
-Bytecode size: 774 B
+Bytecode size: 770 B
 
 Addr    Size
 ==== =======
@@ -7,8 +7,8 @@ Addr    Size
 0001       1     headerSize: 28
 0002       1     requiredEngineVersion: 0
 0003       1     numericOptions: 0
-0004       2     bytecodeSize: 774
-0006       2     expectedCRC: 63bf
+0004       2     bytecodeSize: 770
+0006       2     expectedCRC: 20c4
 0008       2     requiredFeatureFlags: 3
 000a       2     BCS_IMPORT_TABLE: 001c
 000c       2     BCS_EXPORT_TABLE: 0020
@@ -17,15 +17,15 @@ Addr    Size
 0012       2     BCS_STRING_TABLE: 0032
 0014       2     BCS_ROM: 0056
 0016       2     BCS_FFI_TABLE: 02ea
-0018       2     BCS_GLOBALS: 02f2
-001a       2     BCS_HEAP: 0306
+0018       2     BCS_GLOBALS: 02ee
+001a       2     BCS_HEAP: 0302
 001c    4  - # Import Table
 001c       2     [0]: 1
 001e       2     [1]: 3
 0020    4  - # Export Table
 0020       4     [0]: &0138
 0024    e  - # Builtins
-0024       2     [BIN_INTERNED_STRINGS]: &0304
+0024       2     [BIN_INTERNED_STRINGS]: &0300
 0026       2     [BIN_ARRAY_PROTO]: undefined
 0028       2     [BIN_STR_PROTOTYPE]: undefined
 002a       2     [BIN_ASYNC_CONTINUE]: undefined
@@ -411,15 +411,15 @@ Addr    Size
 02e6       2             Call(count 2, flag true)
 02e8       1             Literal(lit undefined)
 02e9       1             Return()
-02ea       8 <unused>
-02f2   14  - # Globals
-02f2       2     [0]: &0130
-02f4       2     [1]: &0134
-02f6       2     [2]: &01c4
-02f8       2     [3]: &0204
-02fa       2     [4]: &025c
-02fc       2     [5]: &0268
-02fe       2     [6]: &0288
-0300       2     [7]: &02c4
-0302       2     [8]: &02d4
-0304       2     Handle: undefined
+02ea       4 <unused>
+02ee   14  - # Globals
+02ee       2     [0]: &0130
+02f0       2     [1]: &0134
+02f2       2     [2]: &01c4
+02f4       2     [3]: &0204
+02f6       2     [4]: &025c
+02f8       2     [5]: &0268
+02fa       2     [6]: &0288
+02fc       2     [7]: &02c4
+02fe       2     [8]: &02d4
+0300       2     Handle: undefined

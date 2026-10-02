@@ -52,6 +52,7 @@ See [Getting Started](./doc/getting-started.md) which walks you through all 3 of
   - [Contribute](./doc/contribute.md)
   - [Numeric types](./doc/numeric-types.md)
   - [Browser WebAssembly demo](./docs/browser-wasm.md)
+  - [Native compiler and FFI runner (`mvmc`)](./docs/native-mvmc.md)
 
 ## Contributing
 

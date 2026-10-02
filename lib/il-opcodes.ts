@@ -75,6 +75,10 @@ export const opcodes = {
   'Throw':         { operands: [                              ], stackChange: -1                     },
   'TypeCodeOf':    { operands: [                              ], stackChange: 0                      },
   'Uint8ArrayNew': { operands: [                              ], stackChange: 0                      },
+  'Uint8ArrayReadInteger':  { operands: [                     ], stackChange: -4                     },
+  'Uint8ArrayWriteInteger': { operands: [                     ], stackChange: -4                     },
+  'Uint8ArrayReadFloat':    { operands: [                     ], stackChange: -3                     },
+  'Uint8ArrayWriteFloat':   { operands: [                     ], stackChange: -4                     },
   'UnOp':          { operands: ['OpOperand'                   ], stackChange: 0                      },
 };
 

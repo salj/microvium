@@ -1954,6 +1954,22 @@ export function decodeSnapshot(snapshot: Snapshot, options: SnapshotReadOptions 
                 }
               }
 
+              case vm_TeOpcodeEx4.VM_OP4_UINT8_ARRAY_READ_INTEGER: {
+                return { operation: { opcode: 'Uint8ArrayReadInteger', operands: [] }, disassembly: 'Uint8ArrayReadInteger()' };
+              }
+
+              case vm_TeOpcodeEx4.VM_OP4_UINT8_ARRAY_WRITE_INTEGER: {
+                return { operation: { opcode: 'Uint8ArrayWriteInteger', operands: [] }, disassembly: 'Uint8ArrayWriteInteger()' };
+              }
+
+              case vm_TeOpcodeEx4.VM_OP4_UINT8_ARRAY_READ_FLOAT: {
+                return { operation: { opcode: 'Uint8ArrayReadFloat', operands: [] }, disassembly: 'Uint8ArrayReadFloat()' };
+              }
+
+              case vm_TeOpcodeEx4.VM_OP4_UINT8_ARRAY_WRITE_FLOAT: {
+                return { operation: { opcode: 'Uint8ArrayWriteFloat', operands: [] }, disassembly: 'Uint8ArrayWriteFloat()' };
+              }
+
               case vm_TeOpcodeEx4.VM_OP4_CLASS_CREATE: {
                 return {
                   operation: {

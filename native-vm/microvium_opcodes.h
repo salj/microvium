@@ -321,6 +321,13 @@ typedef enum vm_TeOpcodeEx4 {
   VM_OP4_NUM_INC_DEFAULT,
   VM_OP4_NUM_DEC_DEFAULT,
 
+  // Bit-level integer and IEEE-754 access on Microvium Uint8Arrays. Each
+  // operation consumes only its stack arguments; no bytecode literals follow.
+  VM_OP4_UINT8_ARRAY_READ_INTEGER,
+  VM_OP4_UINT8_ARRAY_WRITE_INTEGER,
+  VM_OP4_UINT8_ARRAY_READ_FLOAT,
+  VM_OP4_UINT8_ARRAY_WRITE_FLOAT,
+
 
   VM_OP4_END
 } vm_TeOpcodeEx4;

@@ -2,7 +2,7 @@ import * as IL from './il';
 import * as VM from './virtual-machine-types';
 import _, { Dictionary } from 'lodash';
 import { SnapshotIL } from "./snapshot-il";
-import { notImplemented, invalidOperation, uniqueName, unexpected, assertUnreachable, hardAssert, notUndefined, entries, stringifyIdentifier, mapObject, RuntimeError } from "./utils";
+import { notImplemented, invalidOperation, uniqueName, unexpected, assertUnreachable, hardAssert, notUndefined, entries, stringifyIdentifier, mapObject, RuntimeError, CompileError } from "./utils";
 import { compileScript, computeMaximumStackDepth, countOperand, flagOperand, indexOperand, literalOperand } from "./src-to-il/src-to-il";
 import { stringifyFunction, stringifyAllocation, stringifyValue, stringifyUnit } from './stringify-il';
 import deepFreeze from 'deep-freeze';
@@ -97,6 +97,7 @@ export class VirtualMachine {
   private handles = new Set<VM.Handle<IL.Value>>();
 
   private moduleCache = new Map<VM.ModuleSource, VM.ModuleObject>();
+  private microviumBytesBuiltinAdded = false;
 
   private debuggerInstrumentation: DebuggerInstrumentationState | undefined;
   private builtins: SnapshotIL['builtins'];
@@ -118,11 +119,15 @@ export class VirtualMachine {
     private resolveNamedFFIImport?: VM.ResolveNamedFFIImport,
   ) {
     const defaultFloatWidth = opts.defaultFloatWidth ?? 64;
+    if (opts.allowNumericTypes === false && defaultFloatWidth !== 64) {
+      throw new CompileError('Numeric types are disabled, so the ordinary Number default must be f64');
+    }
     this.opts = {
       overflowChecks: true,
+      ...opts,
       defaultFloatWidth,
-      executionFlags: [IL.ExecutionFlag.FloatSupport],
-      ...opts
+      // Do not mutate a caller-owned array when adding flags needed by the VM.
+      executionFlags: [...(opts.executionFlags ?? [IL.ExecutionFlag.FloatSupport])],
     };
     this.opts.defaultFloatWidth = defaultFloatWidth;
     if (this.opts.overflowChecks) {
@@ -161,16 +166,23 @@ export class VirtualMachine {
     if (moduleObject) {
       return moduleObject;
     }
-    moduleObject = this.newObject(IL.nullValue, 0);
-    this.moduleCache.set(moduleSource, moduleObject);
 
     const filename = moduleSource.debugFilename || '<no file>';
     const { unit, numericTypesUsed } = compileScript(filename, moduleSource.sourceText, {
       defaultFloatWidth: this.opts.defaultFloatWidth ?? 64,
     });
+    if (numericTypesUsed && this.opts.allowNumericTypes === false) {
+      throw new CompileError(`Numeric types are disabled for this compiler; ${filename} requires the numeric-types snapshot feature`);
+    }
     if (numericTypesUsed && this.opts.executionFlags && !this.opts.executionFlags.includes(IL.ExecutionFlag.NumericTypes)) {
       this.opts.executionFlags.push(IL.ExecutionFlag.NumericTypes);
     }
+
+    // Cache the namespace before resolving dependencies so circular imports
+    // still see the partially initialized module. Do this after compilation so
+    // a rejected source does not leave a poisoned cache entry behind.
+    moduleObject = this.newObject(IL.nullValue, 0);
+    this.moduleCache.set(moduleSource, moduleObject);
 
     if (this.opts.outputIL && this.opts.writeDebugFile && moduleSource.debugFilename && !moduleSource.debugFilename.startsWith('<') /* E.g. <builtins> */) {
       this.opts.writeDebugFile(moduleSource.debugFilename + '.il', stringifyUnit(unit, {
@@ -297,10 +309,21 @@ export class VirtualMachine {
       builtins
     });
 
+    const requiresNumericBytecode = new Set<IL.Opcode>([
+      'Uint8ArrayReadInteger', 'Uint8ArrayWriteInteger',
+      'Uint8ArrayReadFloat', 'Uint8ArrayWriteFloat',
+    ]);
     const usesNumericBytecode = [...functions.values()].some(func =>
-      Object.values(func.blocks).some(block => block.operations.some(op => op.opcode.startsWith('Numeric'))));
+      Object.values(func.blocks).some(block => block.operations.some(op =>
+        op.opcode.startsWith('Numeric') || requiresNumericBytecode.has(op.opcode))));
     const flags = new Set<IL.ExecutionFlag>(this.opts.executionFlags);
-    if (usesNumericBytecode) flags.add(IL.ExecutionFlag.NumericTypes);
+    if (this.opts.allowNumericTypes === false) flags.delete(IL.ExecutionFlag.NumericTypes);
+    if (usesNumericBytecode) {
+      if (this.opts.allowNumericTypes === false) {
+        throw new CompileError('Numeric types are disabled for this compiler; the compiled VM contains numeric-types bytecode');
+      }
+      flags.add(IL.ExecutionFlag.NumericTypes);
+    }
 
     // Check for any uncreated global variables
     this.checkGlobalsAreCreated(globalSlots);
@@ -498,6 +521,9 @@ export class VirtualMachine {
     moduleHostContext?: any
   ): { entryFunction: IL.FunctionValue } {
     const self = this;
+    if (unit.freeVariables.includes('MicroviumBytes')) {
+      this.addMicroviumBytesBuiltin();
+    }
     const remappedNamedImportIDs = new Map<IL.HostFunctionID, IL.HostFunctionID>();
     const reservedIDs = new Set(unit.reservedHostFunctionIDs ?? []);
     for (const namedImport of unit.namedImports ?? []) {
@@ -1027,6 +1053,10 @@ export class VirtualMachine {
       case 'Throw'        : return this.operationThrow();
       case 'TypeCodeOf'   : return this.operationTypeCodeOf();
       case 'Uint8ArrayNew': return this.operationUint8ArrayNew();
+      case 'Uint8ArrayReadInteger': return this.operationUint8ArrayReadInteger();
+      case 'Uint8ArrayWriteInteger': return this.operationUint8ArrayWriteInteger();
+      case 'Uint8ArrayReadFloat': return this.operationUint8ArrayReadFloat();
+      case 'Uint8ArrayWriteFloat': return this.operationUint8ArrayWriteFloat();
       case 'UnOp'         : return this.operationUnOp(operands[0]);
       default: return assertUnreachable(operation);
     }
@@ -1143,6 +1173,116 @@ export class VirtualMachine {
       this.runtimeError('Uint8Array length out of range');
     }
     this.push(this.newUint8Array(length));
+  }
+
+  private operationUint8ArrayReadInteger() {
+    const littleEndian = this.popBooleanOption('littleEndian');
+    const signed = this.popBooleanOption('signed');
+    const width = this.popIntegerOption('width', 64);
+    const bitOffset = this.popIntegerOption('bitOffset', MAX_UINT8_ARRAY_LENGTH * 8);
+    const bytesValue = this.pop();
+    const bytes = this.getUint8ArrayArgument(bytesValue);
+    if (width < 1) return this.runtimeError('Integer bit width must be in the range 1..64');
+    if (bitOffset + width > bytes.bytes.length * 8) return this.runtimeError('Uint8Array bit range out of bounds');
+
+    let bits = 0n;
+    for (let i = 0; i < width; i++) {
+      const position = bitOffset + i;
+      const byte = bytes.bytes[position >> 3];
+      const sourceBit = littleEndian ? position & 7 : 7 - (position & 7);
+      const resultBit = littleEndian ? i : width - i - 1;
+      if ((byte & (1 << sourceBit)) !== 0) bits |= 1n << BigInt(resultBit);
+    }
+
+    const numericType: IL.NumericType = { kind: 'integer', signed, width };
+    this.pushNumeric(this.performNumericOperation(() =>
+      convertNumeric({ flavor: { kind: 'ordinary' }, value: bits }, numericType, this.opts.defaultFloatWidth ?? 64)));
+  }
+
+  private operationUint8ArrayWriteInteger() {
+    const littleEndian = this.popBooleanOption('littleEndian');
+    const value = this.numberValueData(this.pop());
+    const width = this.popIntegerOption('width', 64);
+    const bitOffset = this.popIntegerOption('bitOffset', MAX_UINT8_ARRAY_LENGTH * 8);
+    const bytesValue = this.pop();
+    const bytes = this.getUint8ArrayArgument(bytesValue);
+    if (width < 1) return this.runtimeError('Integer bit width must be in the range 1..64');
+    if (bitOffset + width > bytes.bytes.length * 8) return this.runtimeError('Uint8Array bit range out of bounds');
+
+    const numericType: IL.NumericType = { kind: 'integer', signed: false, width };
+    const converted = this.performNumericOperation(() => convertNumeric(value, numericType, this.opts.defaultFloatWidth ?? 64));
+    let bits = converted.value as bigint;
+    for (let i = 0; i < width; i++) {
+      const position = bitOffset + i;
+      const destinationBit = littleEndian ? position & 7 : 7 - (position & 7);
+      const sourceBit = littleEndian ? i : width - i - 1;
+      const mask = 1 << destinationBit;
+      const oldByte = bytes.bytes[position >> 3];
+      bytes.bytes[position >> 3] = (bits & (1n << BigInt(sourceBit))) !== 0n
+        ? oldByte | mask
+        : oldByte & ~mask;
+    }
+    this.push(bytesValue);
+  }
+
+  private operationUint8ArrayReadFloat() {
+    const littleEndian = this.popBooleanOption('littleEndian');
+    const width = this.popIntegerOption('width', 64);
+    const byteOffset = this.popIntegerOption('byteOffset', MAX_UINT8_ARRAY_LENGTH);
+    const bytesValue = this.pop();
+    const bytes = this.getUint8ArrayArgument(bytesValue);
+    if (width !== 32 && width !== 64) return this.runtimeError('Float width must be 32 or 64');
+    const byteLength = width / 8;
+    if (byteOffset + byteLength > bytes.bytes.length) return this.runtimeError('Uint8Array byte range out of bounds');
+
+    const buffer = new ArrayBuffer(byteLength);
+    const view = new DataView(buffer);
+    for (let i = 0; i < byteLength; i++) view.setUint8(i, bytes.bytes[byteOffset + i]);
+    const value = width === 32 ? view.getFloat32(0, littleEndian) : view.getFloat64(0, littleEndian);
+    this.push(IL.typedFloatValue(width, value));
+  }
+
+  private operationUint8ArrayWriteFloat() {
+    const littleEndian = this.popBooleanOption('littleEndian');
+    const value = this.numberValueData(this.pop());
+    const width = this.popIntegerOption('width', 64);
+    const byteOffset = this.popIntegerOption('byteOffset', MAX_UINT8_ARRAY_LENGTH);
+    const bytesValue = this.pop();
+    const bytes = this.getUint8ArrayArgument(bytesValue);
+    if (width !== 32 && width !== 64) return this.runtimeError('Float width must be 32 or 64');
+    const byteLength = width / 8;
+    if (byteOffset + byteLength > bytes.bytes.length) return this.runtimeError('Uint8Array byte range out of bounds');
+
+    const floatType: IL.NumericType = { kind: 'float', width };
+    const converted = this.performNumericOperation(() => convertNumeric(value, floatType, this.opts.defaultFloatWidth ?? 64));
+    const buffer = new ArrayBuffer(byteLength);
+    const view = new DataView(buffer);
+    if (width === 32) view.setFloat32(0, converted.value as number, littleEndian);
+    else view.setFloat64(0, converted.value as number, littleEndian);
+    for (let i = 0; i < byteLength; i++) bytes.bytes[byteOffset + i] = view.getUint8(i);
+    this.push(bytesValue);
+  }
+
+  private popIntegerOption(name: string, maximum: number): number {
+    const value = this.numberValueData(this.pop()).value;
+    const integer = typeof value === 'bigint'
+      ? value >= 0n && value <= BigInt(maximum) ? Number(value) : -1
+      : Number.isSafeInteger(value) && value >= 0 && value <= maximum ? value : -1;
+    if (integer < 0) return this.runtimeError(`${name} must be an integer in the range 0..${maximum}`);
+    return integer;
+  }
+
+  private popBooleanOption(name: string): boolean {
+    const value = this.pop();
+    if (value.type !== 'BooleanValue') return this.runtimeError(`${name} must be a boolean`);
+    return value.value;
+  }
+
+  private getUint8ArrayArgument(value: IL.Value): IL.Uint8ArrayAllocation {
+    if (value.type !== 'ReferenceValue') return this.runtimeError('Expected a Microvium Uint8Array');
+    const allocation = this.dereference(value);
+    if (allocation.type !== 'Uint8ArrayAllocation') return this.runtimeError('Expected a Microvium Uint8Array');
+    return allocation;
   }
 
   private operationArrayGet(index: number) {
@@ -3392,6 +3532,69 @@ export class VirtualMachine {
 
     // For tests that need to differentiate whether they're being run on node vs Microvium
     this.setProperty(obj_Microvium, this.stringValue('isMicrovium'), IL.trueValue);
+
+  }
+
+  private addMicroviumBytesBuiltin() {
+    if (this.microviumBytesBuiltinAdded) return;
+    this.microviumBytesBuiltinAdded = true;
+
+    // Keep byte operations off the existing Microvium object. Its properties
+    // are retained together, so adding numeric bytecode there would make every
+    // program using an older Microvium helper require the numeric-types ABI.
+    const obj_MicroviumBytes = this.newObject(IL.nullValue, 0);
+    this.globalSet('MicroviumBytes', obj_MicroviumBytes);
+    const uint8ArrayNumericBuiltin = (
+      name: string,
+      opcode: 'Uint8ArrayReadInteger' | 'Uint8ArrayWriteInteger' | 'Uint8ArrayReadFloat' | 'Uint8ArrayWriteFloat',
+      argumentCount: number,
+    ) => {
+      const operations: IL.Operation[] = [];
+      let stackDepth = 0;
+      for (let argumentIndex = 1; argumentIndex <= argumentCount; argumentIndex++) {
+        operations.push({
+          opcode: 'LoadArg',
+          operands: [indexOperand(argumentIndex)],
+          stackDepthBefore: stackDepth,
+          stackDepthAfter: ++stackDepth,
+        });
+      }
+      const operation: IL.Operation = {
+        opcode,
+        operands: [],
+        stackDepthBefore: stackDepth,
+        stackDepthAfter: undefined,
+      };
+      const stackChange = IL.calcDynamicStackChangeOfOp(operation);
+      if (stackChange === undefined) return unexpected('Numeric Uint8Array opcode must have a fixed stack change');
+      operation.stackDepthAfter = stackDepth += stackChange;
+      operations.push(operation);
+      operations.push({
+        opcode: 'Return',
+        operands: [],
+        stackDepthBefore: stackDepth,
+        stackDepthAfter: 0,
+      });
+      return this.importCustomILFunction(`MicroviumBytes.${name}`, {
+        entryBlockID: 'entry',
+        blocks: {
+          entry: {
+            id: 'entry',
+            expectedStackDepthAtEntry: 0,
+            operations,
+          },
+        },
+      });
+    };
+
+    this.setProperty(obj_MicroviumBytes, this.stringValue('readInteger'),
+      uint8ArrayNumericBuiltin('readInteger', 'Uint8ArrayReadInteger', 5));
+    this.setProperty(obj_MicroviumBytes, this.stringValue('writeInteger'),
+      uint8ArrayNumericBuiltin('writeInteger', 'Uint8ArrayWriteInteger', 5));
+    this.setProperty(obj_MicroviumBytes, this.stringValue('readFloat'),
+      uint8ArrayNumericBuiltin('readFloat', 'Uint8ArrayReadFloat', 4));
+    this.setProperty(obj_MicroviumBytes, this.stringValue('writeFloat'),
+      uint8ArrayNumericBuiltin('writeFloat', 'Uint8ArrayWriteFloat', 5));
   }
 
   private addGlobalPromiseClass() {

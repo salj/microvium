@@ -127,6 +127,23 @@ suite('end-to-end', function () {
     assert.deepEqual(nativeResults, expected);
   });
 
+  test('bit-packed record example runs in the reference and native VMs', () => {
+    const source = fs.readFileSync('examples/bit-packed-record.mvm.js', 'utf8');
+    const vm = VirtualMachineFriendly.create();
+    addDefaultGlobals(vm);
+    vm.globalThis.vmExport = vm.vmExport;
+    vm.evaluateModule({ sourceText: source, debugFilename: 'examples/bit-packed-record.mvm.js' });
+
+    const expected = [5, -17, 1400];
+    const referenceResults = expected.map((_, index) => vm.resolveExport(index + 1)());
+    assert.deepEqual(referenceResults, expected);
+
+    const snapshot = vm.createSnapshot();
+    const nativeVM = Microvium.restore(snapshot);
+    const nativeResults = expected.map((_, index) => nativeVM.resolveExport(index + 1)());
+    assert.deepEqual(nativeResults, expected);
+  });
+
   test('legacy f64 source remains engine-minor-0 and runs on the new runtime', () => {
     const vm = VirtualMachineFriendly.create();
     vm.globalThis.vmExport = vm.vmExport;

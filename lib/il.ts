@@ -171,6 +171,10 @@ export interface OtherOperation extends OperationBase {
     | 'Throw'
     | 'TypeCodeOf'
     | 'Uint8ArrayNew'
+    | 'Uint8ArrayReadInteger'
+    | 'Uint8ArrayWriteInteger'
+    | 'Uint8ArrayReadFloat'
+    | 'Uint8ArrayWriteFloat'
     | 'UnOp'
 }
 

@@ -16,4 +16,11 @@ suite('browser compiler entry', () => {
     const decoded = decodeSnapshot({ data: Buffer.from(snapshot) });
     assert.isFalse(decoded.snapshotInfo.flags.has(IL.ExecutionFlag.NumericTypes));
   });
+
+  test('can reject numeric-types when compiling a snapshot', () => {
+    assert.throws(
+      () => compileSource('vmExport(1, /*u12*/ 4095);', { allowNumericTypes: false }),
+      /Numeric types are disabled/,
+    );
+  });
 });

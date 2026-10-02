@@ -150,6 +150,17 @@ export function encodeSnapshot(snapshot: SnapshotIL, generateDebugHTML: boolean,
         block.operations.some(operation => operation.opcode === 'Uint8ArrayNew')
       )
     );
+  const requiresUint8ArrayNumericSupport =
+    [...snapshot.functions.values()].some(func =>
+      Object.values(func.blocks).some(block =>
+        block.operations.some(operation =>
+          operation.opcode === 'Uint8ArrayReadInteger' ||
+          operation.opcode === 'Uint8ArrayWriteInteger' ||
+          operation.opcode === 'Uint8ArrayReadFloat' ||
+          operation.opcode === 'Uint8ArrayWriteFloat'
+        )
+      )
+    );
   if (requiredFeatureFlags > 0xFFFF) {
     return invalidOperation('Snapshot feature flags exceed the 16-bit v9 header field');
   }
@@ -160,7 +171,8 @@ export function encodeSnapshot(snapshot: SnapshotIL, generateDebugHTML: boolean,
   // use a v2 GC layout, so either case requires the updated runtime ABI.
   const requiredEngineVersion = Math.max(
     usesNumericTypes ? 1 : 0,
-    requiresUint8ArrayV2Support ? 2 : 0
+    requiresUint8ArrayV2Support ? 2 : 0,
+    requiresUint8ArrayNumericSupport ? 3 : 0
   );
   const numericOptions = usesNumericTypes && snapshot.numericOptions.defaultFloatWidth === 32 ? 0x01 : 0x00;
 

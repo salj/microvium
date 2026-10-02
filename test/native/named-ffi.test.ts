@@ -42,6 +42,17 @@ suite('native named FFI', () => {
     assert.throws(() => native.resolveNamedExport('run')(), /arity mismatch.*expected 1, received 0/);
   });
 
+  test('reads multi-byte export counts and symbol indexes in the native VM', () => {
+    const declarations = Array.from({ length: 130 }, (_, i) =>
+      `/** @mvm-ffi */ export function function${i}() { return ${i}; }`
+    ).join('\n');
+    const vm = VirtualMachineFriendly.create({}, { noLib: true });
+    vm.evaluateModule({ sourceText: declarations });
+
+    const native = restore(vm.createSnapshot(), {});
+    assert.equal(native.resolveNamedExport('function129')(), 129);
+  });
+
   test('checks named import arity at the native call boundary', () => {
     const vm = VirtualMachineFriendly.create({}, {
       noLib: true,

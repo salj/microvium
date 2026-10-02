@@ -149,5 +149,10 @@
     "named FFI compiler surface checks imported function arity at the call boundary",
     "named FFI compiler surface rejects unsupported annotated import forms",
     "numeric source annotations a parenthesized cast operand stays tight before a following operator",
-    "numeric source annotations a cast over a parenthesized compound expression stays outside it"
+    "numeric source annotations a cast over a parenthesized compound expression stays outside it",
+    "named FFI metadata keeps a one-byte prefix literal when a reference would not reduce the record",
+    "named FFI metadata encodes and reads an empty table using its four zero counts",
+    "named FFI metadata uses multi-byte counts and indexes in the compact table",
+    "named FFI metadata rejects non-canonical or oversized compact varints",
+    "native named FFI reads multi-byte export counts and symbol indexes in the native VM"
 ]

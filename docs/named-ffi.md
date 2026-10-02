@@ -98,14 +98,34 @@ into the VM heap.
 
 ## Snapshot representation and compatibility
 
-The v9 snapshot contains a shared UTF-8 symbol stream sorted by byte order.
-Each symbol stores a backreference start and length into any earlier decoded
-part of the stream, followed by its literal tail. Identical signatures are
-stored once and referenced by table index. This keeps module names, imported
-names, exported names, and reused signatures out of the runtime call path.
+The FFI section is a prototype table. Its header is four canonical unsigned
+LEB128 varints restricted to 16-bit values, in this order: symbol count,
+signature count, import count, and export count. An empty table is four zero
+bytes. The same varint encoding is used for indexes and IDs.
 
-The C runtime rejects unbound named calls during linking. v8.1 snapshots have
-no named metadata and are rejected by default. Build the C runtime with
+Symbols are UTF-8 byte strings sorted by byte order. Each record stores a
+varint prefix length, an optional varint absolute start offset when the prefix
+length is nonzero, a varint literal-tail length, and the literal tail bytes.
+The backreference can point anywhere in the earlier decoded symbol stream,
+including across symbol boundaries. A zero prefix length is the literal form
+and has no start offset. The encoder uses a reference only when its complete
+record is smaller than the literal form.
+
+Each signature is an argument-count byte, one type byte per argument, and one
+result-type byte. Type zero means `Value`. Identical signatures are stored
+once. An import row stores varint values for call ID, module-name index,
+import-name index, and signature index. An export row stores varint values for
+export ID, export-name index, and signature index. IDs still cover the full
+16-bit call-ID space.
+
+This is a hard cut from the previous prototype FFI table layout. There is no
+compatibility decoder; snapshots using that table need to be recompiled. The
+table format does not change call IDs or add symbol processing to the runtime
+call path. The C enumeration API decodes names into host-provided scratch
+memory.
+
+v8.1 snapshots have no named metadata and remain a separate legacy format.
+They are rejected by default. Build the C runtime with
 `MVM_SUPPORT_LEGACY_BYTECODE=1` to opt in; the TypeScript reader also requires
 `supportLegacyBytecode: true`. Resnapshotting an opted-in v8.1 VM writes the
-current v9 format.
+current snapshot format.

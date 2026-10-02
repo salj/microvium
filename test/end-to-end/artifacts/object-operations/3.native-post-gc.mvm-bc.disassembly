@@ -1,4 +1,4 @@
-Bytecode size: 580 B
+Bytecode size: 576 B
 
 Addr    Size
 ==== =======
@@ -7,8 +7,8 @@ Addr    Size
 0001       1     headerSize: 28
 0002       1     requiredEngineVersion: 0
 0003       1     numericOptions: 0
-0004       2     bytecodeSize: 580
-0006       2     expectedCRC: 433c
+0004       2     bytecodeSize: 576
+0006       2     expectedCRC: d00c
 0008       2     requiredFeatureFlags: 3
 000a       2     BCS_IMPORT_TABLE: 001c
 000c       2     BCS_EXPORT_TABLE: 001e
@@ -17,14 +17,14 @@ Addr    Size
 0012       2     BCS_STRING_TABLE: 0030
 0014       2     BCS_ROM: 0050
 0016       2     BCS_FFI_TABLE: 0222
-0018       2     BCS_GLOBALS: 022a
-001a       2     BCS_HEAP: 0232
+0018       2     BCS_GLOBALS: 0226
+001a       2     BCS_HEAP: 022e
 001c    2  - # Import Table
 001c       2     [0]: 3
 001e    4  - # Export Table
 001e       4     [0]: &00b4
 0022    e  - # Builtins
-0022       2     [BIN_INTERNED_STRINGS]: &0230
+0022       2     [BIN_INTERNED_STRINGS]: &022c
 0024       2     [BIN_ARRAY_PROTO]: undefined
 0026       2     [BIN_STR_PROTOTYPE]: undefined
 0028       2     [BIN_ASYNC_CONTINUE]: undefined
@@ -292,20 +292,20 @@ Addr    Size
 021c       2             Call(count 3, flag true)
 021e       3             Literal(20)
 0221       1             Return()
-0222       8 <unused>
-022a    8  - # Globals
-022a       2     [0]: &00b0
-022c       2     [1]: &0234
-022e       2     [2]: &0214
-0230       2     Handle: undefined
-0232   12  - # GC allocations
-0232       2     Header [Size: 16, Type: TC_REF_PROPERTY_LIST]
-0234   10  -     # TsPropertyList
-0234       2         dpNext: null
-0236       2         dpProto: null
-0238       2         key: &0054
-023a       2         value: 5
-023c       2         key: &0058
-023e       2         value: 10
-0240       2         key: &005c
-0242       2         value: &0204
+0222       4 <unused>
+0226    8  - # Globals
+0226       2     [0]: &00b0
+0228       2     [1]: &0230
+022a       2     [2]: &0214
+022c       2     Handle: undefined
+022e   12  - # GC allocations
+022e       2     Header [Size: 16, Type: TC_REF_PROPERTY_LIST]
+0230   10  -     # TsPropertyList
+0230       2         dpNext: null
+0232       2         dpProto: null
+0234       2         key: &0054
+0236       2         value: 5
+0238       2         key: &0058
+023a       2         value: 10
+023c       2         key: &005c
+023e       2         value: &0204

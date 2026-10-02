@@ -136,9 +136,9 @@ export type SupportedNode =
 
 export function isFunctionNode(node: SupportedNode): node is SupportedFunctionNode {
   return node.type === 'FunctionDeclaration'
+    || node.type === 'FunctionExpression'
     || node.type === 'ArrowFunctionExpression'
-    || node.type === 'ClassDeclaration'
-    || node.type === 'ClassExpression'
+    || node.type === 'ClassMethod'
 }
 
 export function isClassField(node: B.ClassBody['body'][number]): node is B.ClassMethod | B.ClassProperty {
@@ -152,4 +152,3 @@ export function isConstructor(node: B.ClassBody['body'][number]): node is B.Clas
     && node.key.type === 'Identifier'
     && node.key.name === 'constructor'
 }
-

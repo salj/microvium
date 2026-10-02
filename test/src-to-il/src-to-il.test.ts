@@ -4,8 +4,24 @@ import * as fs from 'fs';
 import { srcToIlFilenames } from "./filenames";
 import { assertSameCode } from "../common";
 import { writeTextFile } from "../../lib/node-io";
+import { assert } from "chai";
+import { isFunctionNode, SupportedNode } from "../../lib/src-to-il/supported-babel-types";
 
 suite('src-to-il', function () {
+  test('classifies function nodes without treating classes as functions', () => {
+    const cases: Array<[string, boolean]> = [
+      ['FunctionDeclaration', true],
+      ['FunctionExpression', true],
+      ['ArrowFunctionExpression', true],
+      ['ClassMethod', true],
+      ['ClassDeclaration', false],
+      ['ClassExpression', false],
+    ];
+    for (const [type, expected] of cases) {
+      assert.equal(isFunctionNode({ type } as unknown as SupportedNode), expected);
+    }
+  });
+
   test('Empty unit', () => {
     const src = ``;
     const { unit } = compileScript('dummy.mvm.js', src);

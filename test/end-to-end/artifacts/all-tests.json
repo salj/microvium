@@ -155,5 +155,6 @@
     "named FFI metadata uses multi-byte counts and indexes in the compact table",
     "named FFI metadata rejects non-canonical or oversized compact varints",
     "native named FFI reads multi-byte export counts and symbol indexes in the native VM",
-    "end-to-end for-statement-omitted-clauses"
+    "end-to-end for-statement-omitted-clauses",
+    "src-to-il classifies function nodes without treating classes as functions"
 ]

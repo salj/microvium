@@ -1706,6 +1706,14 @@ export class VirtualMachine {
         let result: boolean;
         if (left.type === 'NumberValue' && right.type === 'NumberValue') {
           result = compareNumeric(op, this.numberValueData(left), this.numberValueData(right));
+        } else if (left.type === 'StringValue' && right.type === 'StringValue') {
+          switch (op) {
+            case '>': result = left.value > right.value; break;
+            case '<': result = left.value < right.value; break;
+            case '>=': result = left.value >= right.value; break;
+            case '<=': result = left.value <= right.value; break;
+            default: return assertUnreachable(op);
+          }
         } else {
           const leftNum = this.convertToNumber(left);
           const rightNum = this.convertToNumber(right);
@@ -2698,7 +2706,9 @@ export class VirtualMachine {
       case 'ReferenceValue': {
         const allocation = this.dereference(value);
         switch (allocation.type) {
-          case 'ArrayAllocation': return '[Array]';
+          // The native runtime uses the same placeholder for arrays and plain
+          // objects. This is intentionally not ECMAScript ToPrimitive.
+          case 'ArrayAllocation': return '[Object]';
           case 'ObjectAllocation': return '[Object]';
           case 'Uint8ArrayAllocation': return '[Object]';
           case 'ClosureAllocation': return '[Function]';
@@ -2711,7 +2721,7 @@ export class VirtualMachine {
       case 'HostFunctionValue': return '[Function]';
       case 'EphemeralFunctionValue': return '[Function]';
       case 'NoOpFunction': return '[Function]';
-      case 'ClassValue': return '[Class]';
+      case 'ClassValue': return '[Function]';
       case 'EphemeralObjectValue': return '[Object]';
       case 'NullValue': return 'null';
       case 'UndefinedValue': return 'undefined';
@@ -3328,13 +3338,14 @@ export class VirtualMachine {
   }
 
   private toPropertyName(propertyNameValue: IL.Value): VM.PropertyKey | VM.Index {
-    // TODO: This condition is too weak. A value like `3.1` can't be used as a property name
     if (propertyNameValue.type === 'StringValue' || propertyNameValue.type === 'NumberValue') {
-      return typeof propertyNameValue.value === 'bigint' ? Number(propertyNameValue.value) : propertyNameValue.value;
+      if (propertyNameValue.type === 'StringValue') return propertyNameValue.value;
+      const index = typeof propertyNameValue.value === 'bigint' ? Number(propertyNameValue.value) : propertyNameValue.value;
+      if (Number.isSafeInteger(index) && index >= 0 && index <= MAX_UINT8_ARRAY_LENGTH) return index;
+      return this.runtimeError('Property index must be an integer in the range 0..8191 or a string');
     } else {
-      // Property indexes in Microvium are limited to numbers or strings. We
-      // don't automatically coerce to a string.
-      return this.runtimeError('Property index must be a number or a string')
+      // Microvium does not apply ECMAScript ToPropertyKey coercion.
+      return this.runtimeError('Property index must be a number or a string');
     }
   }
 
@@ -3489,7 +3500,6 @@ export class VirtualMachine {
         }
       }
     }));
-
 
     this.setProperty(obj_Microvium, this.stringValue('typeCodeOf'), this.importCustomILFunction('typeCodeOf', {
       entryBlockID: 'entry',

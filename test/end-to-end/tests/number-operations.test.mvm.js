@@ -2,7 +2,7 @@
 description: >
   Tests various operations that should classify as vm_TeNumberOp operations
 runExportedFunction: 0
-assertionCount: 153
+assertionCount: 156
 ---*/
 vmExport(0, run);
 
@@ -105,6 +105,12 @@ function testDivision() {
 }
 
 function testLessThan() {
+  // String pairs compare by UTF-16 code unit, not by numeric coercion.
+  assertEqual('10' < '2', true);
+  assertEqual('b' >= 'aa', true);
+  // UTF-16 ordering differs from Unicode code-point ordering for this pair.
+  assertEqual('\u{10000}' < '\uE000', true);
+
   // Integers
   assertEqual(1 < 2, true);
   assertEqual(2 < 1, false);

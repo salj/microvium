@@ -352,6 +352,9 @@ module with entry 'moduleEntry' {
         assertEqual @ free assertEqual
         assertEqual @ free assertEqual
         assertEqual @ free assertEqual
+        assertEqual @ free assertEqual
+        assertEqual @ free assertEqual
+        assertEqual @ free assertEqual
       }
     }
   }

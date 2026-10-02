@@ -738,6 +738,29 @@ function testIntToString() {
 
 function testLessThan() {
   entry:
+    // String pairs compare by UTF-16 code unit, not by numeric coercion.
+    LoadGlobal(name 'global:assertEqual');
+    Literal(lit undefined);
+    Literal(lit '10');
+    Literal(lit '2');
+    BinOp(op '<');
+    Literal(lit true);
+    Call(count 3, flag true);
+    LoadGlobal(name 'global:assertEqual');
+    Literal(lit undefined);
+    Literal(lit 'b');
+    Literal(lit 'aa');
+    BinOp(op '>=');
+    Literal(lit true);
+    Call(count 3, flag true);
+    // UTF-16 ordering differs from Unicode code-point ordering for this pair.
+    LoadGlobal(name 'global:assertEqual');
+    Literal(lit undefined);
+    Literal(lit '𐀀');
+    Literal(lit '');
+    BinOp(op '<');
+    Literal(lit true);
+    Call(count 3, flag true);
     // Integers
     LoadGlobal(name 'global:assertEqual');
     Literal(lit undefined);

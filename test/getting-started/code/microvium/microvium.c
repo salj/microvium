@@ -1810,6 +1810,7 @@ static Value vm_convertToString(VM* vm, Value value);
 static Value vm_concat(VM* vm, Value* left, Value* right);
 static TeTypeCode deepTypeOf(VM* vm, Value value);
 static bool vm_isString(VM* vm, Value value);
+static int vm_compareStringUtf16(VM* vm, Value left, Value right);
 static int32_t vm_readInt32(VM* vm, TeTypeCode type, Value value);
 static TeError vm_resolveExport(VM* vm, mvm_VMExportID id, Value* result);
 static bool vm_getNamedImportArity(VM* vm, mvm_HostFunctionID callID, uint8_t* out_argumentCount);
@@ -3212,6 +3213,18 @@ SUB_OP_NUM_OP: {
   reg3 = reg1;
   if (reg3 < VM_NUM_OP_DIVIDER) reg1 = POP();
   else reg1 = 0;
+
+  if (reg3 <= VM_NUM_OP_GREATER_EQUAL && vm_isString(vm, reg1) && vm_isString(vm, reg2)) {
+    int comparison = vm_compareStringUtf16(vm, reg1, reg2);
+    switch (reg3) {
+      case VM_NUM_OP_LESS_THAN: reg1 = comparison < 0; break;
+      case VM_NUM_OP_GREATER_THAN: reg1 = comparison > 0; break;
+      case VM_NUM_OP_LESS_EQUAL: reg1 = comparison <= 0; break;
+      case VM_NUM_OP_GREATER_EQUAL: reg1 = comparison >= 0; break;
+      default: VM_ASSERT_UNREACHABLE(vm);
+    }
+    goto SUB_TAIL_PUSH_REG1_BOOL;
+  }
 
   if (vm->numericTypes) {
     vm_TsNumeric left, right, result;
@@ -9475,6 +9488,93 @@ static bool vm_isString(VM* vm, Value value) {
   return mvm_typeOf(vm, value) == VM_T_STRING;
 }
 
+typedef struct vm_TsUtf16Iterator {
+  LongPtr data;
+  size_t remaining;
+  uint16_t pendingLowSurrogate;
+  bool hasPendingLowSurrogate;
+} vm_TsUtf16Iterator;
+
+static bool vm_nextUtf16CodeUnit(vm_TsUtf16Iterator* iterator, uint16_t* out_codeUnit) {
+  if (iterator->hasPendingLowSurrogate) {
+    iterator->hasPendingLowSurrogate = false;
+    *out_codeUnit = iterator->pendingLowSurrogate;
+    return true;
+  }
+  if (iterator->remaining == 0) return false;
+
+  uint8_t bytes[4];
+  bytes[0] = LongPtr_read1(iterator->data);
+  uint8_t first = bytes[0];
+  size_t sequenceLength;
+  uint32_t codePoint;
+  if (first < 0x80) {
+    sequenceLength = 1;
+    codePoint = first;
+  } else if (first >= 0xC2 && first <= 0xDF) {
+    sequenceLength = 2;
+    codePoint = first & 0x1F;
+  } else if (first >= 0xE0 && first <= 0xEF) {
+    sequenceLength = 3;
+    codePoint = first & 0x0F;
+  } else if (first >= 0xF0 && first <= 0xF4) {
+    sequenceLength = 4;
+    codePoint = first & 0x07;
+  } else {
+    sequenceLength = 1;
+    codePoint = 0xFFFD;
+  }
+
+  bool valid = sequenceLength <= iterator->remaining;
+  for (size_t i = 1; valid && i < sequenceLength; i++) {
+    bytes[i] = LongPtr_read1(LongPtr_add(iterator->data, (int16_t)i));
+    if ((bytes[i] & 0xC0) != 0x80) valid = false;
+  }
+  if (valid && sequenceLength > 1) {
+    if ((first == 0xE0 && bytes[1] < 0xA0) ||
+        (first == 0xED && bytes[1] >= 0xA0) ||
+        (first == 0xF0 && bytes[1] < 0x90) ||
+        (first == 0xF4 && bytes[1] > 0x8F)) {
+      valid = false;
+    }
+  }
+
+  if (valid) {
+    for (size_t i = 1; i < sequenceLength; i++) {
+      codePoint = (codePoint << 6) | (bytes[i] & 0x3F);
+    }
+  } else {
+    // Microvium source strings are UTF-8. Keep malformed host-provided input
+    // deterministic by comparing each invalid leading byte as U+FFFD.
+    sequenceLength = 1;
+    codePoint = 0xFFFD;
+  }
+
+  iterator->data = LongPtr_add(iterator->data, (int16_t)sequenceLength);
+  iterator->remaining -= sequenceLength;
+  if (codePoint <= 0xFFFF) {
+    *out_codeUnit = (uint16_t)codePoint;
+  } else {
+    codePoint -= 0x10000;
+    *out_codeUnit = (uint16_t)(0xD800 + (codePoint >> 10));
+    iterator->pendingLowSurrogate = (uint16_t)(0xDC00 + (codePoint & 0x3FF));
+    iterator->hasPendingLowSurrogate = true;
+  }
+  return true;
+}
+
+static int vm_compareStringUtf16(VM* vm, Value left, Value right) {
+  vm_TsUtf16Iterator a = { vm_getStringData(vm, left), vm_stringSizeUtf8(vm, left), 0, false };
+  vm_TsUtf16Iterator b = { vm_getStringData(vm, right), vm_stringSizeUtf8(vm, right), 0, false };
+  for (;;) {
+    uint16_t codeUnitA, codeUnitB;
+    bool hasA = vm_nextUtf16CodeUnit(&a, &codeUnitA);
+    bool hasB = vm_nextUtf16CodeUnit(&b, &codeUnitB);
+    if (!hasA || !hasB) return hasA ? 1 : hasB ? -1 : 0;
+    if (codeUnitA != codeUnitB) return codeUnitA < codeUnitB ? -1 : 1;
+  }
+}
+
 /** Reads a numeric value that is a subset of a 32-bit integer */
 static int32_t vm_readInt32(VM* vm, TeTypeCode type, Value value) {
   CODE_COVERAGE(33); // Hit
@@ -10484,6 +10584,38 @@ static TeError toPropertyName(VM* vm, Value* value) {
       CODE_COVERAGE_ERROR_PATH(374); // Not hit
       // 32-bit numbers are out of the range of supported array indexes
       return vm_newError(vm, MVM_E_RANGE_ERROR);
+    }
+
+    case TC_REF_NUMBER: {
+      vm_TsNumeric number;
+      TeError err = vm_readNumeric(vm, *value, &number);
+      if (err != MVM_E_SUCCESS) return vm_newError(vm, MVM_E_TYPE_ERROR);
+
+      if (vm_isIntegerNumeric(&number)) {
+        if (number.kind == VM_NUM_SIGNED) {
+          if (number.value.i < 0 || number.value.i > VM_MAX_INT14) return vm_newError(vm, MVM_E_RANGE_ERROR);
+          *value = VirtualInt14_encode(vm, (int16_t)number.value.i);
+        } else {
+          if (number.value.u > VM_MAX_INT14) return vm_newError(vm, MVM_E_RANGE_ERROR);
+          *value = VirtualInt14_encode(vm, (int16_t)number.value.u);
+        }
+        return MVM_E_SUCCESS;
+      }
+
+#if MVM_SUPPORT_FLOAT
+      double n = vm_numericAsDouble(&number);
+      if (!MVM_FLOAT_IS_FINITE(n) || trunc(n) != n) return vm_newError(vm, MVM_E_TYPE_ERROR);
+      if (n < 0 || n > VM_MAX_INT14) return vm_newError(vm, MVM_E_RANGE_ERROR);
+      *value = VirtualInt14_encode(vm, (int16_t)n);
+      return MVM_E_SUCCESS;
+#else
+      return vm_newError(vm, MVM_E_OPERATION_REQUIRES_FLOAT_SUPPORT);
+#endif
+    }
+
+    case TC_VAL_NEG_ZERO: {
+      *value = VirtualInt14_encode(vm, 0);
+      return MVM_E_SUCCESS;
     }
 
     case TC_REF_STRING: {

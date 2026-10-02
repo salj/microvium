@@ -219,6 +219,12 @@ I've also included a `run` function here to demonstrate how to actually call the
 
 The function `vmImport` registers the import in the import table of the VM, similarly to how `vmExport` registers the export in the export table. The import table is persisted in the snapshot, and will be used at runtime during `mvm_restore` to resolve all the imports to actual host values.
 
+At runtime, `mvm_getExportCount` and `mvm_getExportID` enumerate every export
+ID in the snapshot, including IDs assigned to named FFI exports. Use
+`mvm_getNamedExport` when the export's name and declared argument count are
+needed; the ID alone does not identify whether an export is a function or a
+value.
+
 To expose `add` and `print` to the VM, we need to use some glue code:
 
 ```c
@@ -268,7 +274,57 @@ Note: the glue code for `print_glue` demonstrates how to copy the string out of 
 
 ## Objects and Arrays
 
-The Microvium C API does not provide a built-in way to create or manipulate JavaScript objects and arrays, but you easily export your own functions to do so, for example:
+The Microvium C API does not provide a built-in way to create or manipulate
+JavaScript objects. Arrays can be created, appended to, and read with a
+streaming iterator, which keeps memory use independent of the array length:
+
+```c
+mvm_TsArrayIterator iterator = {0};
+mvm_TeError error = mvm_arrayIteratorInit(vm, &iterator, arrayValue);
+if (error != MVM_E_SUCCESS) abort();
+
+bool done = false;
+while (!done) {
+  error = mvm_arrayIteratorNext(vm, &iterator, &done);
+  if (error != MVM_E_SUCCESS) abort();
+  if (done) break;
+
+  mvm_Value item = mvm_arrayIteratorValue(&iterator);
+  if (mvm_typeOf(vm, item) == VM_T_ARRAY) {
+    /* Start another iterator on item to walk a nested array. */
+  }
+  /* Consume item before advancing, or clone it into a handle to retain it. */
+}
+
+mvm_arrayIteratorRelease(vm, &iterator);
+```
+
+The cursor reads the current array length and slots on every step. Appends made
+before completion are visible; shrinking the array can end iteration early.
+Holes yield `undefined`. Nested arrays are values too, so each can be walked
+with its own cursor. Release every active cursor before freeing the VM.
+
+To construct an array in the host, initialize handles for both the array and
+the value being appended, call `mvm_newArray`, then append each item as it is
+produced:
+
+```c
+mvm_Handle array = {0};
+mvm_Handle item = {0};
+mvm_initializeHandle(vm, &array);
+mvm_initializeHandle(vm, &item);
+if (mvm_newArray(vm, &array) != MVM_E_SUCCESS) abort();
+
+/* Set item to the next value, then append it without building a second list. */
+mvm_handleSet(&item, mvm_newInt32(vm, 42));
+if (mvm_arrayPush(vm, &array, &item) != MVM_E_SUCCESS) abort();
+
+mvm_releaseHandle(vm, &item);
+mvm_releaseHandle(vm, &array);
+```
+
+Changing object properties can be done through exported JavaScript helpers, for
+example:
 
 ```js
 vmExport(1, () => ({})); // create object

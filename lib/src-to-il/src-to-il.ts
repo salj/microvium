@@ -730,15 +730,15 @@ export function compileForStatement(cur: Cursor, statement: B.ForStatement): voi
   const hasClosureScope = !!forBlockScope.closureSlots;
 
   // Init
-  if (!statement.init) return notImplemented('for-loop without initializer');
   const scope = enterScope(cur, forBlockScope); // Also compiles the prolog
-  compilingNode(cur, statement.init);
-
-  if (statement.init.type === 'VariableDeclaration') {
-    compileVariableDeclaration(cur, statement.init);
-  } else {
-    compileExpression(cur, statement.init);
-    addOp(cur, 'Pop', countOperand(1));
+  if (statement.init) {
+    compilingNode(cur, statement.init);
+    if (statement.init.type === 'VariableDeclaration') {
+      compileVariableDeclaration(cur, statement.init);
+    } else {
+      compileExpression(cur, statement.init);
+      addOp(cur, 'Pop', countOperand(1));
+    }
   }
 
   // Note: the terminateBlock contains the epilogue for the `for`, including
@@ -751,10 +751,13 @@ export function compileForStatement(cur: Cursor, statement: B.ForStatement): voi
   const loopCur = createBlock(cur, loopBlock);
 
   // Loop test expression
-  if (!statement.test) return notImplemented('for-loop without test expression');
-  compileExpression(loopCur, statement.test);
-  // Branch after test
-  addOp(loopCur, 'Branch', labelOfBlock(bodyBlock), labelOfBlock(terminateBlock));
+  if (statement.test) {
+    compileExpression(loopCur, statement.test);
+    // Branch after test
+    addOp(loopCur, 'Branch', labelOfBlock(bodyBlock), labelOfBlock(terminateBlock));
+  } else {
+    addOp(loopCur, 'Jump', labelOfBlock(bodyBlock));
+  }
 
   // Body
   const bodyCur = createBlock(loopCur, bodyBlock);
@@ -769,9 +772,10 @@ export function compileForStatement(cur: Cursor, statement: B.ForStatement): voi
     addOp(bodyCur, 'ScopeClone');
   }
 
-  if (!statement.update) return notImplemented('for-loop without update expression');
-  compileExpression(bodyCur, statement.update);
-  addOp(bodyCur, 'Pop', countOperand(1)); // Expression result not used
+  if (statement.update) {
+    compileExpression(bodyCur, statement.update);
+    addOp(bodyCur, 'Pop', countOperand(1)); // Expression result not used
+  }
   // Loop back at end of body
   addOp(bodyCur, 'Jump', labelOfBlock(loopBlock));
 

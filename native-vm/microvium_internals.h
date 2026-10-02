@@ -1193,6 +1193,7 @@ static TeError vm_numericUnary(VM* vm, vm_TeNumberOp op, const vm_TsNumeric* val
 static TeError vm_numericCast(VM* vm, const vm_TsNumeric* value, vm_TsNumericType target, vm_TsNumeric* out);
 static int vm_compareNumericExact(VM* vm, const vm_TsNumeric* a, const vm_TsNumeric* b);
 static TeError vm_numericBytecode(VM* vm, uint8_t opcode, uint8_t descriptor, Value* left, Value* right, Value* result, uint8_t* popCount);
+static TeError vm_uint8ArrayNumeric(VM* vm, uint8_t opcode, Value* arguments, Value* result);
 static bool vm_isNumberType(TeTypeCode type);
 static inline uint16_t vm_getAllocationSizeExcludingHeaderFromHeaderWord(uint16_t headerWord);
 static inline LongPtr LongPtr_add(LongPtr lp, int16_t offset);

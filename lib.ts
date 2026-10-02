@@ -34,6 +34,8 @@ export interface MicroviumCreateOpts {
   // For debug purposes: output IL generated for each input file
   outputIL?: boolean;
   defaultFloatWidth?: 32 | 64;
+  /** Reject sources that require the mixed numeric-types snapshot feature. */
+  allowNumericTypes?: boolean;
   /** Implementations for named imports, keyed by module specifier then imported name. */
   namedImports?: NamedHostImportTable;
   /** Host adapter for optional compiler debug files. */

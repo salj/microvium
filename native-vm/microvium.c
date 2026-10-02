@@ -2070,6 +2070,27 @@ SUB_OP_EXTENDED_4: {
       goto SUB_TAIL_POP_0_PUSH_0;
     } // End of VM_OP4_OBJECT_KEYS
 
+    MVM_CASE(VM_OP4_UINT8_ARRAY_READ_INTEGER):
+    MVM_CASE(VM_OP4_UINT8_ARRAY_WRITE_INTEGER):
+    MVM_CASE(VM_OP4_UINT8_ARRAY_READ_FLOAT):
+    MVM_CASE(VM_OP4_UINT8_ARRAY_WRITE_FLOAT): {
+      reg3 = reg1;
+      uint8_t argumentCount =
+        reg3 == VM_OP4_UINT8_ARRAY_READ_INTEGER ? 5 :
+        reg3 == VM_OP4_UINT8_ARRAY_READ_FLOAT ? 4 : 5;
+      Value result;
+      FLUSH_REGISTER_CACHE();
+      err = vm_uint8ArrayNumeric(vm, (uint8_t)reg3, reg->pStackPointer - argumentCount, &result);
+      CACHE_REGISTERS();
+      if (err != MVM_E_SUCCESS) {
+        err = vm_newError(vm, err);
+        goto SUB_EXIT;
+      }
+      pStackPointer -= argumentCount;
+      reg1 = result;
+      goto SUB_TAIL_POP_0_PUSH_REG1;
+    }
+
 /* ------------------------------------------------------------------------- */
 /*                          VM_OP4_CLASS_CREATE                              */
 /*   Expects:                                                                */
@@ -6060,8 +6081,8 @@ static Value vm_floatToStr(VM* vm, Value value) {
   if (numeric.kind == VM_NUM_SIGNED || numeric.kind == VM_NUM_UNSIGNED) {
     char integerBuf[24];
     int size = numeric.kind == VM_NUM_SIGNED
-      ? MVM_SNPRINTF(integerBuf, sizeof integerBuf, "%" PRId64, numeric.value.i)
-      : MVM_SNPRINTF(integerBuf, sizeof integerBuf, "%" PRIu64, numeric.value.u);
+      ? MVM_SNPRINTF(integerBuf, sizeof integerBuf, "%lld", (long long)numeric.value.i)
+      : MVM_SNPRINTF(integerBuf, sizeof integerBuf, "%llu", (unsigned long long)numeric.value.u);
     VM_ASSERT(vm, size >= 0 && (size_t)size < sizeof integerBuf);
     return mvm_newString(vm, integerBuf, (size_t)size);
   }
@@ -6476,6 +6497,191 @@ static TeError vm_numericCast(VM* vm, const vm_TsNumeric* value, vm_TsNumericTyp
 #endif
   }
   return MVM_E_NUMERIC_ERROR;
+}
+
+static TeError vm_numericArgumentToUint32(VM* vm, Value value, uint32_t* out) {
+  vm_TsNumeric number;
+  TeError err = vm_readNumeric(vm, value, &number);
+  if (err != MVM_E_SUCCESS) return MVM_E_TYPE_ERROR;
+
+  uint64_t integer;
+  if (number.kind == VM_NUM_SIGNED) {
+    if (number.value.i < 0) return MVM_E_RANGE_ERROR;
+    integer = (uint64_t)number.value.i;
+  } else if (number.kind == VM_NUM_UNSIGNED) {
+    integer = number.value.u;
+  } else {
+    double n = vm_numericAsDouble(&number);
+#if MVM_SUPPORT_FLOAT
+    if (!MVM_FLOAT_IS_FINITE(n) || trunc(n) != n) return MVM_E_RANGE_ERROR;
+#endif
+    if (n < 0 || n > (double)0xFFFFFFFFu) return MVM_E_RANGE_ERROR;
+    integer = (uint32_t)n;
+    if ((double)integer != n) return MVM_E_RANGE_ERROR;
+  }
+
+  if (integer > 0xFFFFFFFFu) return MVM_E_RANGE_ERROR;
+  *out = (uint32_t)integer;
+  return MVM_E_SUCCESS;
+}
+
+static TeError vm_getUint8ArrayArgument(VM* vm, Value value, LongPtr* out_data, uint8_t** out_mutableData, uint16_t* out_length) {
+  if (!Value_isShortPtr(value) && !Value_isBytecodeMappedPtrOrWellKnown(value)) return MVM_E_TYPE_ERROR;
+  if (deepTypeOf(vm, value) != TC_REF_UINT8_ARRAY) return MVM_E_TYPE_ERROR;
+
+  LongPtr data = DynamicPtr_decode_long(vm, value);
+  uint16_t header = readAllocationHeaderWord_long(data);
+  *out_data = data;
+  *out_length = vm_getUint8ArrayLengthFromHeaderWord(header);
+  *out_mutableData = Value_isShortPtr(value) ? ShortPtr_decode(vm, value) : NULL;
+  return MVM_E_SUCCESS;
+}
+
+static TeError vm_uint8ArrayNumeric(VM* vm, uint8_t opcode, Value* arguments, Value* result) {
+  if (!vm->numericTypes) return MVM_E_INVALID_BYTECODE;
+
+  bool isReadInteger = opcode == VM_OP4_UINT8_ARRAY_READ_INTEGER;
+  bool isWriteInteger = opcode == VM_OP4_UINT8_ARRAY_WRITE_INTEGER;
+  bool isReadFloat = opcode == VM_OP4_UINT8_ARRAY_READ_FLOAT;
+  bool isWriteFloat = opcode == VM_OP4_UINT8_ARRAY_WRITE_FLOAT;
+  if (!isReadInteger && !isWriteInteger && !isReadFloat && !isWriteFloat) return MVM_E_INVALID_BYTECODE;
+
+  LongPtr byteArray;
+  uint8_t* mutableByteArray;
+  uint16_t byteArrayLength;
+  TeError err = vm_getUint8ArrayArgument(vm, arguments[0], &byteArray, &mutableByteArray, &byteArrayLength);
+  if (err != MVM_E_SUCCESS) return err;
+
+  bool littleEndian;
+  uint32_t offset;
+  uint32_t width;
+  if (isReadInteger || isWriteInteger) {
+    if (isReadInteger) {
+      if (arguments[3] != VM_VALUE_TRUE && arguments[3] != VM_VALUE_FALSE) return MVM_E_TYPE_ERROR;
+      if (arguments[4] != VM_VALUE_TRUE && arguments[4] != VM_VALUE_FALSE) return MVM_E_TYPE_ERROR;
+      err = vm_numericArgumentToUint32(vm, arguments[1], &offset);
+      if (err != MVM_E_SUCCESS) return err;
+      err = vm_numericArgumentToUint32(vm, arguments[2], &width);
+      if (err != MVM_E_SUCCESS) return err;
+      if (width < 1 || width > 64) return MVM_E_RANGE_ERROR;
+      bool isSigned = arguments[3] == VM_VALUE_TRUE;
+      littleEndian = arguments[4] == VM_VALUE_TRUE;
+
+      uint32_t totalBits = (uint32_t)byteArrayLength * 8;
+      if (offset > totalBits || width > totalBits - offset) return MVM_E_INVALID_ARRAY_INDEX;
+
+      uint64_t bits = 0;
+      for (uint32_t i = 0; i < width; i++) {
+        uint32_t position = offset + i;
+        uint8_t byte = LongPtr_read1(LongPtr_add(byteArray, (int16_t)(position >> 3)));
+        uint8_t sourceBit = littleEndian ? (uint8_t)(position & 7) : (uint8_t)(7 - (position & 7));
+        uint32_t resultBit = littleEndian ? i : width - i - 1;
+        if ((byte & (1u << sourceBit)) != 0) bits |= ((uint64_t)1 << resultBit);
+      }
+
+      vm_TsNumeric numeric;
+      vm_setIntegerNumeric(&numeric, isSigned, (uint8_t)width, bits);
+      return vm_writeNumeric(vm, &numeric, result);
+    }
+
+    if (arguments[4] != VM_VALUE_TRUE && arguments[4] != VM_VALUE_FALSE) return MVM_E_TYPE_ERROR;
+    err = vm_numericArgumentToUint32(vm, arguments[1], &offset);
+    if (err != MVM_E_SUCCESS) return err;
+    err = vm_numericArgumentToUint32(vm, arguments[2], &width);
+    if (err != MVM_E_SUCCESS) return err;
+    if (width < 1 || width > 64) return MVM_E_RANGE_ERROR;
+    littleEndian = arguments[4] == VM_VALUE_TRUE;
+    uint32_t totalBits = (uint32_t)byteArrayLength * 8;
+    if (offset > totalBits || width > totalBits - offset) return MVM_E_INVALID_ARRAY_INDEX;
+    if (!mutableByteArray) return MVM_E_ATTEMPT_TO_WRITE_TO_ROM;
+
+    vm_TsNumeric input, converted;
+    err = vm_readNumeric(vm, arguments[3], &input);
+    if (err != MVM_E_SUCCESS) return MVM_E_TYPE_ERROR;
+    vm_TsNumericType target = { VM_NUM_UNSIGNED, (uint8_t)width };
+    err = vm_numericCast(vm, &input, target, &converted);
+    if (err != MVM_E_SUCCESS) return err == MVM_E_NUMERIC_ERROR ? MVM_E_RANGE_ERROR : err;
+    uint64_t bits = vm_numericIntegerBits(&converted);
+    for (uint32_t i = 0; i < width; i++) {
+      uint32_t position = offset + i;
+      uint8_t destinationBit = littleEndian ? (uint8_t)(position & 7) : (uint8_t)(7 - (position & 7));
+      uint32_t sourceBit = littleEndian ? i : width - i - 1;
+      uint8_t mask = (uint8_t)(1u << destinationBit);
+      uint8_t* pByte = &mutableByteArray[position >> 3];
+      *pByte = (bits & ((uint64_t)1 << sourceBit)) ? (uint8_t)(*pByte | mask) : (uint8_t)(*pByte & ~mask);
+    }
+    *result = arguments[0];
+    return MVM_E_SUCCESS;
+  }
+
+  if (isReadFloat) {
+    if (arguments[3] != VM_VALUE_TRUE && arguments[3] != VM_VALUE_FALSE) return MVM_E_TYPE_ERROR;
+    err = vm_numericArgumentToUint32(vm, arguments[1], &offset);
+    if (err != MVM_E_SUCCESS) return err;
+    err = vm_numericArgumentToUint32(vm, arguments[2], &width);
+    if (err != MVM_E_SUCCESS) return err;
+    if (width != 32 && width != 64) return MVM_E_RANGE_ERROR;
+    littleEndian = arguments[3] == VM_VALUE_TRUE;
+    uint32_t byteLength = width / 8;
+    if (offset > byteArrayLength || byteLength > byteArrayLength - offset) return MVM_E_INVALID_ARRAY_INDEX;
+
+#if MVM_SUPPORT_FLOAT
+    uint64_t bits = 0;
+    for (uint32_t i = 0; i < byteLength; i++) {
+      uint8_t byte = LongPtr_read1(LongPtr_add(byteArray, (int16_t)(offset + i)));
+      if (littleEndian) bits |= (uint64_t)byte << (8 * i);
+      else bits = (bits << 8) | byte;
+    }
+    vm_TsNumeric numeric;
+    numeric.kind = VM_NUM_FLOAT;
+    numeric.width = (uint8_t)width;
+    if (width == 32) {
+      uint32_t floatBits = (uint32_t)bits;
+      memcpy(&numeric.value.f32, &floatBits, sizeof(floatBits));
+    } else {
+      memcpy(&numeric.value.f64, &bits, sizeof(bits));
+    }
+    return vm_writeNumeric(vm, &numeric, result);
+#else
+    return MVM_E_OPERATION_REQUIRES_FLOAT_SUPPORT;
+#endif
+  }
+
+  if (arguments[4] != VM_VALUE_TRUE && arguments[4] != VM_VALUE_FALSE) return MVM_E_TYPE_ERROR;
+  err = vm_numericArgumentToUint32(vm, arguments[1], &offset);
+  if (err != MVM_E_SUCCESS) return err;
+  err = vm_numericArgumentToUint32(vm, arguments[2], &width);
+  if (err != MVM_E_SUCCESS) return err;
+  if (width != 32 && width != 64) return MVM_E_RANGE_ERROR;
+  littleEndian = arguments[4] == VM_VALUE_TRUE;
+  uint32_t byteLength = width / 8;
+  if (offset > byteArrayLength || byteLength > byteArrayLength - offset) return MVM_E_INVALID_ARRAY_INDEX;
+  if (!mutableByteArray) return MVM_E_ATTEMPT_TO_WRITE_TO_ROM;
+
+#if MVM_SUPPORT_FLOAT
+  vm_TsNumeric input, converted;
+  err = vm_readNumeric(vm, arguments[3], &input);
+  if (err != MVM_E_SUCCESS) return MVM_E_TYPE_ERROR;
+  vm_TsNumericType target = { VM_NUM_FLOAT, (uint8_t)width };
+  err = vm_numericCast(vm, &input, target, &converted);
+  if (err != MVM_E_SUCCESS) return err;
+  uint64_t bits;
+  if (width == 32) {
+    uint32_t floatBits;
+    memcpy(&floatBits, &converted.value.f32, sizeof(floatBits));
+    bits = floatBits;
+  } else {
+    memcpy(&bits, &converted.value.f64, sizeof(bits));
+  }
+  for (uint32_t i = 0; i < byteLength; i++) {
+    uint32_t shift = 8 * (littleEndian ? i : byteLength - i - 1);
+    mutableByteArray[offset + i] = (uint8_t)(bits >> shift);
+  }
+  *result = arguments[0];
+  return MVM_E_SUCCESS;
+#else
+  return MVM_E_OPERATION_REQUIRES_FLOAT_SUPPORT;
+#endif
 }
 
 static TeError vm_numericApplyContext(VM* vm, vm_TsNumeric* value, vm_TsNumericType context) {

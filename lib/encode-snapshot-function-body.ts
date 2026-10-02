@@ -955,6 +955,26 @@ class InstructionEmitter {
     return instructionEx4(vm_TeOpcodeEx4.VM_OP4_UINT8_ARRAY_NEW, op);
   }
 
+  operationUint8ArrayReadInteger(_ctx: InstructionEmitContext, op: IL.Operation) {
+    if (op.opcode !== 'Uint8ArrayReadInteger') return unexpected();
+    return instructionEx4(vm_TeOpcodeEx4.VM_OP4_UINT8_ARRAY_READ_INTEGER, op);
+  }
+
+  operationUint8ArrayWriteInteger(_ctx: InstructionEmitContext, op: IL.Operation) {
+    if (op.opcode !== 'Uint8ArrayWriteInteger') return unexpected();
+    return instructionEx4(vm_TeOpcodeEx4.VM_OP4_UINT8_ARRAY_WRITE_INTEGER, op);
+  }
+
+  operationUint8ArrayReadFloat(_ctx: InstructionEmitContext, op: IL.Operation) {
+    if (op.opcode !== 'Uint8ArrayReadFloat') return unexpected();
+    return instructionEx4(vm_TeOpcodeEx4.VM_OP4_UINT8_ARRAY_READ_FLOAT, op);
+  }
+
+  operationUint8ArrayWriteFloat(_ctx: InstructionEmitContext, op: IL.Operation) {
+    if (op.opcode !== 'Uint8ArrayWriteFloat') return unexpected();
+    return instructionEx4(vm_TeOpcodeEx4.VM_OP4_UINT8_ARRAY_WRITE_FLOAT, op);
+  }
+
   operationStoreGlobal(ctx: InstructionEmitContext, op: IL.Operation, globalSlotID: VM.GlobalSlotID) {
     const index = ctx.indexOfGlobalSlot(globalSlotID);
     hardAssert(isUInt16(index));

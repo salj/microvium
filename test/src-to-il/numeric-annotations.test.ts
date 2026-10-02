@@ -82,6 +82,35 @@ suite('numeric source annotations', () => {
     assert.equal(stringAdd(), 'ab');
   });
 
+  test('numeric-types can be disabled for a snapshot compiler', () => {
+    const vm = VirtualMachineFriendly.create({}, { allowNumericTypes: false });
+    vm.globalThis.vmExport = vm.vmExport;
+    vm.evaluateModule({ sourceText: 'vmExport(1, () => 1.25 + 0.5);' });
+    const snapshot = vm.createSnapshot();
+    assert.equal(snapshot.data.readUInt8(2), 0);
+
+    const rejected = VirtualMachineFriendly.create({}, { allowNumericTypes: false });
+    const rejectedSource = { sourceText: 'const x = /*u12*/ 4095;' };
+    assert.throws(
+      () => rejected.evaluateModule(rejectedSource),
+      /Numeric types are disabled/,
+    );
+    assert.throws(
+      () => rejected.evaluateModule(rejectedSource),
+      /Numeric types are disabled/,
+      'a failed compile must not leave a cached module namespace',
+    );
+    assert.throws(
+      () => VirtualMachineFriendly.create({}, { allowNumericTypes: false, defaultFloatWidth: 32 }),
+      /ordinary Number default must be f64/,
+    );
+
+    const byteApi = VirtualMachineFriendly.create({}, { allowNumericTypes: false });
+    byteApi.globalThis.vmExport = byteApi.vmExport;
+    byteApi.evaluateModule({ sourceText: 'vmExport(1, () => MicroviumBytes.readInteger(Microvium.newUint8Array(1), 0, 1, false, true));' });
+    assert.throws(() => byteApi.createSnapshot(), /Numeric types are disabled/);
+  });
+
   test('invalid numeric widths are rejected', () => {
     assert.throws(() => compile('let x = /*u0*/ 1;'), /Invalid numeric type annotation/);
     assert.throws(() => compile('let x = /*i65*/ 1;'), /Invalid numeric type annotation/);

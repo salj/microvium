@@ -97,6 +97,13 @@ Numeric flavors do not add `Math.*` functions or flavor-preserving overloads.
 See [supported builtins](./supported-builtins.md) for the functions Microvium
 provides.
 
+The Microvium byte-array numeric methods read integer fields as exact `iN` or
+`uN` values, including widths above binary64's exact-integer range. Fields can
+start at any bit and cross byte boundaries; writes preserve bits outside the
+field. Writes convert the input to the requested width, truncate finite floats
+toward zero, and keep the low bits. The native runtime operates directly on
+Microvium's byte array without allocating a temporary VM buffer.
+
 ## Ordinary Number precision
 
 The compiler's ordinary Number default is f64 unless built with
@@ -118,6 +125,12 @@ Snapshots using an explicit numeric flavor, f32 ordinary-number mode, or a
 per-file default that differs from the compiler build default require a runtime
 with numeric-types support (engine minor version 1). Legacy f64-only snapshots
 use engine minor version 0 and still run on the newer runtime.
+
+The compiler API accepts `allowNumericTypes: false` to reject any source that
+requires this feature. The `microvium-compile` CLI exposes the same restriction
+as `--no-numeric-types`. With the restriction enabled, use the f64 ordinary
+Number default; explicit numeric annotations and per-file precision overrides
+fail compilation instead of silently changing their semantics.
 
 ## Introspection
 

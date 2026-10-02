@@ -34,6 +34,14 @@ npm run compile -- source.mvm.js
 npm run compile -- source.mvm.js -o - > output.mvm-bc
 ```
 
+Use `--no-numeric-types` to reject numeric annotations, f32 defaults, and
+`MicroviumBytes` calls, and keep the emitted snapshot on the legacy numeric
+format:
+
+```sh
+npm run compile -- --no-numeric-types source.mvm.js -o output.mvm-bc
+```
+
 ## Browser compiler WebAssembly
 
 The browser compiler is built from the same JavaScript bundle using Emscripten

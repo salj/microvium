@@ -28,7 +28,32 @@ arithmetic, conversion, and precision rules.
 
 - `Microvium.newUint8Array(size)` creates a byte array with an integer length
   from 0 through 8191. It supports numeric indexing and `.length`; it is not an
-  ECMAScript `Uint8Array` backed by an `ArrayBuffer`.
+  ECMAScript `Uint8Array` backed by an `ArrayBuffer`. `ArrayBuffer` and the
+  standard `DataView` API are not provided.
+- `MicroviumBytes.readInteger(bytes, bitOffset, width, signed, littleEndian)`
+  reads an `iN` or `uN` value from 1 to 64 bits. A field can start at any bit
+  and span byte boundaries.
+- `MicroviumBytes.writeInteger(bytes, bitOffset, width, value, littleEndian)`
+  writes the low `width` bits of `value`, preserves surrounding bits, and
+  returns `bytes`.
+- `MicroviumBytes.readFloat(bytes, byteOffset, width, littleEndian)` reads an IEEE
+  f32 or f64 value. `MicroviumBytes.writeFloat(bytes, byteOffset, width, value,
+  littleEndian)` writes one and returns `bytes`.
+
+`MicroviumBytes` is a separate global so snapshots only include this numeric
+bytecode when they use the byte operations. Such snapshots require engine
+minor 3.
+
+The native runtime reads and writes the VM byte array directly; it does not
+allocate a temporary VM buffer for these operations. For integer methods,
+`littleEndian: true` maps the first addressed bit to the
+least significant value bit and visits bits low-to-high inside each byte.
+`false` visits bits high-to-low and maps the first addressed bit to the most
+significant value bit. Float methods require byte offsets and widths of 32 or
+64. Endianness and signedness arguments must be booleans. Reads return numeric
+flavors (`iN`, `uN`, `f32`, or `f64`), so snapshots that use these methods carry
+the numeric-types feature. Writes use the numeric conversion rules in
+[Numeric types](./numeric-types.md).
 - `Microvium.typeCodeOf(value)` returns the Microvium type code for a value.
 - `Microvium.numericKindOf(value)` and `Microvium.numericIsInteger(value)` are
   the underlying operations used by `Number.kind` and `Number.isInteger`.
@@ -39,6 +64,27 @@ arithmetic, conversion, and precision rules.
 const packet = Microvium.newUint8Array(5000);
 packet[4095] = 0xA5;
 packet[4096] = 0x5A;
+```
+
+Pack fields across byte boundaries without building temporary arrays:
+
+```js
+const packet = Microvium.newUint8Array(3);
+MicroviumBytes.writeInteger(packet, 0, 3, /*(u3)*/ 5, true);    // flags
+MicroviumBytes.writeInteger(packet, 3, 10, /*(i10)*/ -17, true); // sensor delta
+MicroviumBytes.writeInteger(packet, 13, 11, /*(u11)*/ 1400, true); // sample
+
+const flags = MicroviumBytes.readInteger(packet, 0, 3, false, true);
+const delta = MicroviumBytes.readInteger(packet, 3, 10, true, true);
+const sample = MicroviumBytes.readInteger(packet, 13, 11, false, true);
+```
+
+`writeFloat` exposes the IEEE representation of a value in the byte array:
+
+```js
+const floatBytes = Microvium.newUint8Array(4);
+MicroviumBytes.writeFloat(floatBytes, 0, 32, 1.5, true);
+const floatBits = MicroviumBytes.readInteger(floatBytes, 0, 32, false, true); // 0x3FC00000
 ```
 
 When the VM's default library is enabled, arrays also have `Array.prototype.push`.

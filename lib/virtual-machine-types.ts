@@ -70,6 +70,8 @@ export interface VirtualMachineOptions {
   /** Host adapter for optional compiler debug files. */
   writeDebugFile?: (filename: string, contents: string) => void;
   defaultFloatWidth?: FloatWidth;
+  /** Reject sources that require the mixed numeric-types snapshot feature. */
+  allowNumericTypes?: boolean;
   /** Host implementations for static named FFI imports, keyed by module and name. */
   namedImports?: Record<string, Record<string, (...args: any[]) => any>>;
 }

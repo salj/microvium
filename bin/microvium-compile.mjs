@@ -17,16 +17,19 @@ or to an adjacent .mvm-bc file for a named input file.
 
 Options:
   -o, --output FILE       Snapshot path, or - for stdout
+  --no-numeric-types      Reject numeric annotations and f32 defaults
   -h, --help              Show this help`;
 }
 
 function parseArgs(argv) {
-  const options = { input: '-', output: undefined };
+  const options = { input: '-', output: undefined, allowNumericTypes: true };
   const positional = [];
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--help' || arg === '-h') return { help: true };
-    if (arg === '--output' || arg === '-o') {
+    if (arg === '--no-numeric-types') {
+      options.allowNumericTypes = false;
+    } else if (arg === '--output' || arg === '-o') {
       options.output = argv[++i];
       if (!options.output) throw new Error(`${arg} requires a path`);
     } else if (arg.startsWith('-') && arg !== '-') {
@@ -63,7 +66,7 @@ async function main() {
     const source = options.input === '-'
       ? readFileSync(0, 'utf8')
       : readFileSync(options.input, 'utf8');
-    const result = Buffer.from(compileSource(source));
+    const result = Buffer.from(compileSource(source, { allowNumericTypes: options.allowNumericTypes }));
     if (options.output === '-') {
       process.stdout.write(result);
     } else {

@@ -8,7 +8,7 @@ Addr    Size
 0002       1     requiredEngineVersion: 0
 0003       1     numericOptions: 0
 0004       2     bytecodeSize: 1082
-0006       2     expectedCRC: 7b2a
+0006       2     expectedCRC: c6df
 0008       2     requiredFeatureFlags: 3
 000a       2     BCS_IMPORT_TABLE: 001c
 000c       2     BCS_EXPORT_TABLE: 001e

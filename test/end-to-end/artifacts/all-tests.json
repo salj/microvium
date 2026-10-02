@@ -159,5 +159,14 @@
     "src-to-il classifies function nodes without treating classes as functions",
     "Uint8Array reference VM out-of-range writes are rejected",
     "Uint8Array reference VM snapshots that can create extended arrays require engine minor 2",
-    "native-api zero-length uint8arrays retain their forwarding slot across GC"
+    "native-api zero-length uint8arrays retain their forwarding slot across GC",
+    "Uint8Array reference VM integer fields pack across bytes and preserve neighboring bits",
+    "Uint8Array reference VM reads and writes signed, wide, and floating representations",
+    "Uint8Array reference VM rejects invalid widths and out-of-bounds bit ranges",
+    "numeric source annotations numeric-types can be disabled for a snapshot compiler",
+    "native Uint8Array numeric access packs arbitrary-width fields and reinterprets f32/f64 bytes",
+    "end-to-end bit-packed record example runs in the reference and native VMs",
+    "string conversion reference and native VMs use the same object and function placeholders",
+    "Uint8Array reference VM numeric writes can mutate a byte array captured in the snapshot",
+    "property keys both VMs accept supported numeric indexes; the reference VM rejects invalid ones"
 ]

@@ -66,8 +66,15 @@ examples of Microvium behavior.
 
 ## Semantic differences
 
-- Relational operators coerce non-number operands to numbers. In particular,
-  string-to-string comparisons do not use ECMAScript's lexicographic ordering.
+- Relational operators compare two strings lexicographically by UTF-16 code
+  units. Other operands are converted directly to numbers; the VM does not run
+  ECMAScript `ToPrimitive` or user-defined conversion methods first.
+- String concatenation uses fixed placeholders for non-primitive values:
+  arrays and objects become `"[Object]"`, functions and classes become
+  `"[Function]"`. It does not run ECMAScript `ToPrimitive` or `toString`.
+- Array and byte-array indexes must be integers from 0 through 8191. Use string
+  keys for plain objects. Microvium does not apply the full ECMAScript
+  `ToPropertyKey` conversion to booleans, `null`, or objects.
 - An early read of a local `let` or `const` binding is detected as a temporal
   dead zone fault. The C runtime reports `MVM_E_TDZ_ERROR`; guest `try`/`catch`
   does not receive it as a catchable JavaScript `ReferenceError`.

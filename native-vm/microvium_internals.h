@@ -1171,6 +1171,7 @@ static Value vm_convertToString(VM* vm, Value value);
 static Value vm_concat(VM* vm, Value* left, Value* right);
 static TeTypeCode deepTypeOf(VM* vm, Value value);
 static bool vm_isString(VM* vm, Value value);
+static int vm_compareStringUtf16(VM* vm, Value left, Value right);
 static int32_t vm_readInt32(VM* vm, TeTypeCode type, Value value);
 static TeError vm_resolveExport(VM* vm, mvm_VMExportID id, Value* result);
 static bool vm_getNamedImportArity(VM* vm, mvm_HostFunctionID callID, uint8_t* out_argumentCount);

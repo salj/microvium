@@ -60,11 +60,17 @@ examples of Microvium behavior.
   rooted in a computed expression are unsupported.
 - `arguments`, `eval`, regular expressions, BigInt literals, symbols,
   `WeakMap`, destructuring, and tagged template literals are unsupported.
-- Relational operators coerce non-number operands to numbers. In particular,
-  string-to-string comparisons do not use ECMAScript's lexicographic ordering.
 - The built-in library is small. See [Supported builtins](./supported-builtins.md)
   for the provided globals and methods; standard JavaScript builtins not listed
   there are not implied to exist.
+
+## Semantic differences
+
+- Relational operators coerce non-number operands to numbers. In particular,
+  string-to-string comparisons do not use ECMAScript's lexicographic ordering.
+- An early read of a local `let` or `const` binding is detected as a temporal
+  dead zone fault. The C runtime reports `MVM_E_TDZ_ERROR`; guest `try`/`catch`
+  does not receive it as a catchable JavaScript `ReferenceError`.
 
 These lists describe the current compiler surface, not a promise of future
 ECMAScript compatibility. Microvium also has a deliberate numeric-flavor

@@ -4,8 +4,9 @@ import { assert } from "chai";
 suite('minimal-size', function () {
   const corePointerCount = 6;
   const coreLongPointerCount = 1;
-  const coreOptionalInt32Count = 1;
+  const coreOptionalInt32Count = 2; // hard limit and resumable slice allowance
   const coreWordCount = 4; // includes 2 single-byte fields
+  const coreOptionalWordCount = 4; // resumable state and retained result
   const coreOptionalPointerCount = 2;
 
   // In the following, "optional features" refers to debug capability and gas counter
@@ -14,14 +15,14 @@ suite('minimal-size', function () {
   const coreSize64BitMax = roundUpTo8Bytes(
     (corePointerCount + coreLongPointerCount + coreOptionalPointerCount) * 8 +
     coreOptionalInt32Count * 4 +
-    coreWordCount * 2 + 1 // safe-mode cycle counter
+    (coreWordCount + coreOptionalWordCount) * 2 + 1 // safe-mode cycle counter
   );
 
   // The core size on a 32-bit embedded device, with optional features
   const coreSize32BitMax = padTo32Bit(
     (corePointerCount + coreLongPointerCount + coreOptionalPointerCount) * 4 +
     coreOptionalInt32Count * 4 +
-    coreWordCount * 2 + 1 // safe-mode cycle counter
+    (coreWordCount + coreOptionalWordCount) * 2 + 1 // safe-mode cycle counter
   );
 
   // The core size on a 32-bit embedded device, without optional features
@@ -72,8 +73,8 @@ suite('minimal-size', function () {
     assert.equal(stats.importTableSize, 0);
     assert.equal(stats.globalVariablesSize, 4);
 
-    assert.equal(coreSize64BitMax, 88);
-    assert.equal(coreSize32BitMax, 52);
+    assert.equal(coreSize64BitMax, 104);
+    assert.equal(coreSize32BitMax, 64);
 
     // Smallest theoretical size:
     assert.equal(coreSize32BitMin, 36);
@@ -88,8 +89,8 @@ suite('minimal-size', function () {
 
     const vm2 = Microvium.restore(snapshot, {});
     const stats = vm2.getMemoryStats();
-    assert.equal(stats.totalSize, 92);
-    assert.equal(stats.coreSize, 88);
+    assert.equal(stats.totalSize, 108);
+    assert.equal(stats.coreSize, 104);
     assert.equal(stats.fragmentCount, 1);
     assert.equal(stats.virtualHeapAllocatedCapacity, 0);
     assert.equal(stats.virtualHeapUsed, 0);
@@ -235,9 +236,9 @@ suite('minimal-size', function () {
     assert.equal(registersSize32BitMin, 28);
     assert.equal(registersSize16BitMin, 20);
 
-    assert.equal(coreSize32BitMax, 52);
-    assert.equal(totalSize64BitMax, 416);
-    assert.equal(totalSize32BitMax, 352);
+    assert.equal(coreSize32BitMax, 64);
+    assert.equal(totalSize64BitMax, 432);
+    assert.equal(totalSize32BitMax, 364);
     assert.equal(totalSize32BitMin, 332);
     assert.equal(totalSize16BitMin, 312);
   })

@@ -297,4 +297,291 @@ suite('native-api', function () {
     try { vm.call(f, []); } catch (e) { err = e; }
     assert.equal(err.message, "The instruction count set by `mvm_stopAfterNInstructions` has been reached");
   })
+
+  test('resumable call yields and resumes without replaying work', () => {
+    const snapshot = compileJs`
+      let calls = 0;
+      vmExport(1, () => {
+        calls++;
+        let sum = 0;
+        for (let i = 0; i < 100; i++) sum += i;
+        return sum;
+      });
+      vmExport(2, () => calls);
+    `
+
+    const vm = new NativeVM(snapshot.data, () => unexpected());
+    const f = vm.resolveExport(1);
+    let run = vm.callResumable(f, [], 1);
+    assert.equal(run.status, 'yielded');
+    assert.throws(() => vm.call(f, []), /suspended resumable call/);
+    assert.throws(() => vm.resume(-2), /Instruction budget/);
+
+    let slices = 0;
+    while (run.status === 'yielded') {
+      run = vm.resume(7);
+      assert.isBelow(++slices, 1000);
+    }
+    assert.equal(run.status, 'complete');
+    if (run.status !== 'complete') throw new Error('expected completed run');
+    assert.equal(run.value.toNumber(), 4950);
+    assert.equal(vm.call(vm.resolveExport(2), []).toNumber(), 1);
+  })
+
+  test('zero budget defers dispatch and cancel releases the continuation', () => {
+    const snapshot = compileJs`
+      let calls = 0;
+      const host = vmImport(1);
+      vmExport(1, () => { calls++; host(); return calls; });
+      vmExport(2, () => calls);
+    `
+
+    let hostCalls = 0;
+    let vm: NativeVM;
+    vm = new NativeVM(snapshot.data, () => () => {
+      hostCalls++;
+      return vm.undefined;
+    });
+    const f = vm.resolveExport(1);
+    const run = vm.callResumable(f, [], 0);
+    assert.equal(run.status, 'yielded');
+    assert.equal(hostCalls, 0);
+
+    vm.cancel();
+    assert.throws(() => vm.resume(10), /no suspended resumable call/);
+    assert.equal(vm.call(vm.resolveExport(2), []).toNumber(), 0);
+    assert.equal(vm.call(f, []).toNumber(), 1);
+    assert.equal(hostCalls, 1);
+  })
+
+  test('zero-budget class calls defer construction until resume', () => {
+    const snapshot = compileJs`
+      let constructions = 0;
+      class C {
+        constructor() {
+          constructions++;
+          for (let i = 0; i < 20; i++) {}
+        }
+      }
+      vmExport(1, C);
+      vmExport(2, () => constructions);
+    `
+    const vm = new NativeVM(snapshot.data, () => unexpected());
+    const run = vm.callResumable(vm.resolveExport(1), [], 0);
+    assert.equal(run.status, 'yielded');
+
+    let resumed = vm.resume(1);
+    let slices = 0;
+    while (resumed.status === 'yielded') {
+      resumed = vm.resume(4);
+      assert.isBelow(++slices, 1000);
+    }
+    assert.equal(vm.call(vm.resolveExport(2), []).toNumber(), 1);
+    if (resumed.status !== 'complete') throw new Error('expected completed run');
+    assert.equal(resumed.value.type, mvm_TeType.VM_T_OBJECT);
+  })
+
+  test('resumable state survives collection and is discarded on exception', () => {
+    const snapshot = compileJs`
+      vmExport(1, value => {
+        for (let i = 0; i < 30; i++) {}
+        throw value;
+      });
+      vmExport(2, () => 42);
+    `
+
+    const vm = new NativeVM(snapshot.data, () => unexpected());
+    const f = vm.resolveExport(1);
+    const argument = vm.newString('expected exception');
+    let run = vm.callResumable(f, [argument], 1);
+    assert.equal(run.status, 'yielded');
+    vm.runGC(false);
+
+    let caught: any;
+    let slices = 0;
+    while (run.status === 'yielded') {
+      try {
+        run = vm.resume(5);
+      } catch (e) {
+        caught = e;
+        break;
+      }
+      assert.isBelow(++slices, 1000);
+    }
+    assert.equal(caught.message, 'expected exception');
+    assert.equal(vm.call(vm.resolveExport(2), []).toNumber(), 42);
+  })
+
+  test('legacy instruction limit aborts and discards a yielded continuation', () => {
+    const snapshot = compileJs`
+      vmExport(1, () => {
+        let sum = 0;
+        for (let i = 0; i < 100; i++) sum += i;
+        return sum;
+      });
+    `
+    const vm = new NativeVM(snapshot.data, () => unexpected());
+    const f = vm.resolveExport(1);
+    vm.stopAfterNInstructions(2);
+    assert.throws(
+      () => vm.callResumable(f, [], 2),
+      /instruction count set by `mvm_stopAfterNInstructions` has been reached/
+    );
+    vm.stopAfterNInstructions(-1);
+    assert.throws(() => vm.resume(10), /no suspended resumable call/);
+    assert.equal(vm.call(f, []).toNumber(), 4950);
+  })
+
+  test('same-VM bytecode reentry is rejected during a resumable host call', () => {
+    const snapshot = compileJs`
+      const host = vmImport(1);
+      let nestedCalls = 0;
+      vmExport(1, () => { host(); return 123; });
+      vmExport(2, () => { nestedCalls++; return 456; });
+      vmExport(3, () => nestedCalls);
+    `
+
+    let vm: NativeVM;
+    let nestedTarget: Value;
+    let nestedError = '';
+    vm = new NativeVM(snapshot.data, () => () => {
+      try {
+        vm.call(nestedTarget, []);
+      } catch (e: any) {
+        nestedError = e.message;
+      }
+      return vm.undefined;
+    });
+    nestedTarget = vm.resolveExport(2);
+
+    const run = vm.callResumable(vm.resolveExport(1), [], -1);
+    assert.equal(run.status, 'complete');
+    assert.include(nestedError, 'already executing a call');
+    assert.equal(vm.call(vm.resolveExport(3), []).toNumber(), 0);
+  })
+
+  test('legacy same-VM bytecode reentry remains supported', () => {
+    const snapshot = compileJs`
+      const host = vmImport(1);
+      let nestedCalls = 0;
+      vmExport(1, () => host());
+      vmExport(2, () => { nestedCalls++; return 456; });
+      vmExport(3, () => nestedCalls);
+    `
+
+    let vm: NativeVM;
+    let nestedTarget: Value;
+    vm = new NativeVM(snapshot.data, () => () => {
+      assert.equal(vm.call(nestedTarget, []).toNumber(), 456);
+      return vm.undefined;
+    });
+    nestedTarget = vm.resolveExport(2);
+
+    vm.call(vm.resolveExport(1), []);
+    assert.equal(vm.call(vm.resolveExport(3), []).toNumber(), 1);
+  })
+
+  test('resumable execution cannot start reentrantly inside a legacy call', () => {
+    const snapshot = compileJs`
+      const host = vmImport(1);
+      vmExport(1, () => host());
+    `
+    let vm: NativeVM;
+    let target: Value;
+    let errorMessage = '';
+    vm = new NativeVM(snapshot.data, () => () => {
+      try {
+        vm.callResumable(target, [], 0);
+      } catch (e: any) {
+        errorMessage = e.message;
+      }
+      return vm.undefined;
+    });
+    target = vm.resolveExport(1);
+    vm.call(target, []);
+    assert.include(errorMessage, 'already executing a call');
+  })
+
+  test('snapshot creation is rejected while resumable execution is suspended', () => {
+    const snapshot = compileJs`
+      vmExport(1, () => { for (let i = 0; i < 20; i++) {} });
+    `
+    const vm = new NativeVM(snapshot.data, () => unexpected());
+    const run = vm.callResumable(vm.resolveExport(1), [], 1);
+    assert.equal(run.status, 'yielded');
+    assert.throws(() => vm.createSnapshot(), /Snapshot creation failed/);
+    vm.cancel();
+    assert.doesNotThrow(() => vm.createSnapshot());
+  })
+
+  test('NativeVMFriendly exposes host-value resumable calls', () => {
+    const snapshot = compileJs`
+      vmExport(1, x => { for (let i = 0; i < 10; i++) x += i; return x; });
+    `
+    const vm = new NativeVMFriendly(snapshot);
+    const f = vm.resolveExport(1);
+    let run = vm.callResumable(f, [5], 1);
+    assert.equal(run.status, 'yielded');
+    let slices = 0;
+    while (run.status === 'yielded') {
+      run = vm.resume(4);
+      assert.isBelow(++slices, 100);
+    }
+    assert.equal(run.status, 'complete');
+    if (run.status !== 'complete') throw new Error('expected completed run');
+    assert.equal(run.value, 50);
+  })
+
+  test('resumable calls drain async continuation jobs across slices', () => {
+    const snapshot = compileJs`
+      const print = vmImport(1);
+      async function child() { return 42; }
+      async function parent() {
+        const value = await child();
+        print('parent:' + value);
+        return value;
+      }
+      vmExport(1, async () => {
+        print('start');
+        const value = await parent();
+        print('done:' + value);
+        return value;
+      });
+    `
+    const legacyOutput: string[] = [];
+    const legacyVm = new NativeVMFriendly(snapshot, { 1: (value: any) => legacyOutput.push(value) });
+    legacyVm.resolveExport(1)();
+    assert.deepEqual(legacyOutput, ['start', 'parent:42', 'done:42']);
+
+    const output: string[] = [];
+    const vm = new NativeVMFriendly(snapshot, { 1: (value: any) => output.push(value) });
+    let run = vm.callResumable(vm.resolveExport(1), [], 1);
+    let slices = 0;
+    let yieldedAfterParent = false;
+    while (run.status === 'yielded') {
+      run = vm.resume(1);
+      vm.garbageCollect();
+      if (output.includes('parent:42') && run.status === 'yielded') yieldedAfterParent = true;
+      assert.isBelow(++slices, 1000);
+    }
+    assert.deepEqual(output, ['start', 'parent:42', 'done:42']);
+    assert.isTrue(yieldedAfterParent);
+    if (run.status !== 'complete') throw new Error('expected completed run');
+    assert.equal(typeof run.value, 'object'); // The original result is the promise, not a continuation's return value.
+
+    const cancelOutput: string[] = [];
+    const cancelVm = new NativeVMFriendly(snapshot, { 1: (value: any) => cancelOutput.push(value) });
+    let cancelRun = cancelVm.callResumable(cancelVm.resolveExport(1), [], 1);
+    let cancelledAfterParent = false;
+    while (cancelRun.status === 'yielded') {
+      cancelRun = cancelVm.resume(1);
+      if (cancelOutput.includes('parent:42') && cancelRun.status === 'yielded') {
+        cancelledAfterParent = true;
+        break;
+      }
+    }
+    assert.isTrue(cancelledAfterParent);
+    cancelVm.cancel();
+    assert.notInclude(cancelOutput, 'done:42');
+  })
 })

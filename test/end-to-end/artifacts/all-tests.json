@@ -168,5 +168,16 @@
     "end-to-end bit-packed record example runs in the reference and native VMs",
     "string conversion reference and native VMs use the same object and function placeholders",
     "Uint8Array reference VM numeric writes can mutate a byte array captured in the snapshot",
-    "property keys both VMs accept supported numeric indexes; the reference VM rejects invalid ones"
+    "property keys both VMs accept supported numeric indexes; the reference VM rejects invalid ones",
+    "native-api resumable call yields and resumes without replaying work",
+    "native-api zero budget defers dispatch and cancel releases the continuation",
+    "native-api zero-budget class calls defer construction until resume",
+    "native-api resumable state survives collection and is discarded on exception",
+    "native-api same-VM bytecode reentry is rejected during a resumable host call",
+    "native-api resumable execution cannot start reentrantly inside a legacy call",
+    "native-api snapshot creation is rejected while resumable execution is suspended",
+    "native-api NativeVMFriendly exposes host-value resumable calls",
+    "native-api resumable calls drain async continuation jobs across slices",
+    "native-api legacy instruction limit aborts and discards a yielded continuation",
+    "native-api legacy same-VM bytecode reentry remains supported"
 ]

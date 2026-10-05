@@ -179,5 +179,17 @@
     "native-api NativeVMFriendly exposes host-value resumable calls",
     "native-api resumable calls drain async continuation jobs across slices",
     "native-api legacy instruction limit aborts and discards a yielded continuation",
-    "native-api legacy same-VM bytecode reentry remains supported"
+    "native-api legacy same-VM bytecode reentry remains supported",
+    "native resumable scheduler awaits host work, snapshots nested records, and resumes in budgeted turns",
+    "native resumable scheduler queues immediate host completion instead of reentering the VM",
+    "native resumable scheduler delivers rejection through the VM catch path",
+    "native resumable scheduler serializes turns when another host completion arrives during a yielded turn",
+    "native resumable scheduler cancels a waiting task and ignores late and duplicate completions",
+    "native resumable scheduler rejects an inline scheduling hook",
+    "native resumable scheduler rejects cycles and accessors in host values before entering the VM",
+    "native resumable scheduler routes out-of-order host completions to their owning tasks",
+    "native resumable scheduler cancels a budget-yielded turn",
+    "C resumable scheduler serializes budgeted calls and delivers an async host completion as a fresh turn",
+    "native resumable scheduler rejects zero and out-of-range slice budgets",
+    "native resumable scheduler preserves non-Error rejection values"
 ]

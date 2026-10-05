@@ -252,6 +252,12 @@ typedef struct mvm_TsArrayIterator {
   uint8_t _state;
 } mvm_TsArrayIterator;
 
+#include "microvium_port.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /** Create an empty, mutable array in an initialized handle. */
 MVM_EXPORT mvm_TeError mvm_newArray(mvm_VM* vm, mvm_Handle* out_array);
 /** Append a value to a mutable array. Both values must be initialized handles.
@@ -259,12 +265,14 @@ MVM_EXPORT mvm_TeError mvm_newArray(mvm_VM* vm, mvm_Handle* out_array);
 MVM_EXPORT mvm_TeError mvm_arrayPush(mvm_VM* vm, mvm_Handle* array, mvm_Handle* value);
 /** Read the current logical length without allocating. */
 MVM_EXPORT mvm_TeError mvm_getArrayLength(mvm_VM* vm, mvm_Value array, uint16_t* out_length);
-
-#include "microvium_port.h"
-
-#ifdef __cplusplus
-extern "C" {
-#endif
+/** Create an empty, mutable object with a null prototype in an initialized handle. */
+MVM_EXPORT mvm_TeError mvm_newObject(mvm_VM* vm, mvm_Handle* out_object);
+/** Set an own property on a mutable object. All values must be initialized handles. */
+MVM_EXPORT mvm_TeError mvm_objectSet(mvm_VM* vm, mvm_Handle* object, mvm_Handle* property_name, mvm_Handle* value);
+/** Read a property into an initialized output handle. Inputs and output may be updated by GC. */
+MVM_EXPORT mvm_TeError mvm_getProperty(mvm_VM* vm, mvm_Handle* object, mvm_Handle* property_name, mvm_Handle* out_value);
+/** Replace an initialized object handle with an array of its enumerable own string keys. */
+MVM_EXPORT mvm_TeError mvm_objectKeys(mvm_VM* vm, mvm_Handle* object);
 
 /**
  * Creates a VM (restores the state of a virtual machine from a snapshot)

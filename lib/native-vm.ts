@@ -44,6 +44,14 @@ export interface NativeVM {
   newBoolean(value: boolean): Value;
   newNumber(value: number): Value;
   newString(value: string): Value;
+  newArray(): Value;
+  arrayPush(array: Value, item: Value): void;
+  arrayValues(array: Value): Value[];
+  newObject(): Value;
+  objectSet(object: Value, propertyName: Value, value: Value): void;
+  objectKeys(object: Value): Value;
+  getProperty(object: Value, propertyName: Value): Value;
+  sameValue(left: Value, right: Value): boolean;
   runGC(squeeze: boolean): void;
   createSnapshot(): Buffer;
   getMemoryStats(): MemoryStats;
@@ -51,6 +59,7 @@ export interface NativeVM {
   stopAfterNInstructions(n: number): void;
   getInstructionCountRemaining(): number;
   readonly undefined: Value;
+  readonly null: Value;
 }
 
 export class VMError extends Error {

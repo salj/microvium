@@ -31,10 +31,19 @@ void NativeVM::Init(Napi::Env env, Napi::Object exports) {
     NativeVM::InstanceMethod("typeOf", &NativeVM::typeOf),
     NativeVM::InstanceMethod("call", &NativeVM::call),
     NativeVM::InstanceAccessor("undefined", &NativeVM::getUndefined, nullptr),
+    NativeVM::InstanceAccessor("null", &NativeVM::getNull, nullptr),
     NativeVM::StaticMethod("setCoverageCallback", &NativeVM::setCoverageCallback),
     NativeVM::InstanceMethod("newBoolean", &NativeVM::newBoolean),
     NativeVM::InstanceMethod("newNumber", &NativeVM::newNumber),
     NativeVM::InstanceMethod("newString", &NativeVM::newString),
+    NativeVM::InstanceMethod("newArray", &NativeVM::newArray),
+    NativeVM::InstanceMethod("arrayPush", &NativeVM::arrayPush),
+    NativeVM::InstanceMethod("arrayValues", &NativeVM::arrayValues),
+    NativeVM::InstanceMethod("newObject", &NativeVM::newObject),
+    NativeVM::InstanceMethod("objectSet", &NativeVM::objectSet),
+    NativeVM::InstanceMethod("objectKeys", &NativeVM::objectKeys),
+    NativeVM::InstanceMethod("getProperty", &NativeVM::getProperty),
+    NativeVM::InstanceMethod("sameValue", &NativeVM::sameValue),
     NativeVM::InstanceMethod("runGC", &NativeVM::runGC),
     NativeVM::InstanceMethod("createSnapshot", &NativeVM::createSnapshot),
     NativeVM::InstanceMethod("getMemoryStats", &NativeVM::getMemoryStats),
@@ -162,6 +171,10 @@ Napi::Value NativeVM::getUndefined(const Napi::CallbackInfo& info) {
   return VM::Value::wrap(vm, mvm_undefined);
 }
 
+Napi::Value NativeVM::getNull(const Napi::CallbackInfo& info) {
+  return VM::Value::wrap(vm, mvm_null);
+}
+
 Napi::Value NativeVM::newBoolean(const Napi::CallbackInfo& info) {
   if (info.Length() < 1) {
     return VM::Value::wrap(vm, mvm_newBoolean(false));
@@ -283,6 +296,177 @@ Napi::Value NativeVM::newNumber(const Napi::CallbackInfo& info) {
   auto arg = info[0];
   auto n = arg.ToNumber().DoubleValue();
   return VM::Value::wrap(vm, mvm_newNumber(vm, n));
+}
+
+Napi::Value NativeVM::newArray(const Napi::CallbackInfo& info) {
+  auto env = info.Env();
+  mvm_Handle array = {};
+  mvm_initializeHandle(vm, &array);
+  mvm_TeError err = mvm_newArray(vm, &array);
+  if (err != MVM_E_SUCCESS) {
+    mvm_releaseHandle(vm, &array);
+    throwVMError(env, err);
+    return env.Undefined();
+  }
+  Napi::Object result = VM::Value::wrap(vm, mvm_handleGet(&array));
+  mvm_releaseHandle(vm, &array);
+  return result;
+}
+
+Napi::Value NativeVM::arrayPush(const Napi::CallbackInfo& info) {
+  auto env = info.Env();
+  if (info.Length() < 2 || !VM::Value::isVMValue(info[0]) || !VM::Value::isVMValue(info[1])) {
+    Napi::TypeError::New(env, "Expected an array Value and an item Value").ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+  auto array = VM::Value::Unwrap(info[0].As<Napi::Object>());
+  auto value = VM::Value::Unwrap(info[1].As<Napi::Object>());
+  if (array->_vm != vm || value->_vm != vm) {
+    Napi::TypeError::New(env, "Values belong to a different NativeVM").ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+  mvm_TeError err = mvm_arrayPush(vm, &array->_handle, &value->_handle);
+  if (err != MVM_E_SUCCESS) {
+    throwVMError(env, err);
+    return env.Undefined();
+  }
+  return env.Undefined();
+}
+
+Napi::Value NativeVM::arrayValues(const Napi::CallbackInfo& info) {
+  auto env = info.Env();
+  if (info.Length() < 1 || !VM::Value::isVMValue(info[0])) {
+    Napi::TypeError::New(env, "Expected an array Value").ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+  auto array = VM::Value::Unwrap(info[0].As<Napi::Object>());
+  if (array->_vm != vm) {
+    Napi::TypeError::New(env, "Value belongs to a different NativeVM").ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+
+  mvm_TsArrayIterator iterator = {};
+  mvm_TeError err = mvm_arrayIteratorInit(vm, &iterator, mvm_handleGet(&array->_handle));
+  if (err != MVM_E_SUCCESS) {
+    throwVMError(env, err);
+    return env.Undefined();
+  }
+
+  Napi::Array values = Napi::Array::New(env);
+  uint32_t index = 0;
+  bool done = false;
+  while (!done) {
+    err = mvm_arrayIteratorNext(vm, &iterator, &done);
+    if (err != MVM_E_SUCCESS) break;
+    if (!done) values.Set(index++, VM::Value::wrap(vm, mvm_arrayIteratorValue(&iterator)));
+  }
+  mvm_arrayIteratorRelease(vm, &iterator);
+  if (err != MVM_E_SUCCESS) {
+    throwVMError(env, err);
+    return env.Undefined();
+  }
+  return values;
+}
+
+Napi::Value NativeVM::newObject(const Napi::CallbackInfo& info) {
+  auto env = info.Env();
+  mvm_Handle object = {};
+  mvm_initializeHandle(vm, &object);
+  mvm_TeError err = mvm_newObject(vm, &object);
+  if (err != MVM_E_SUCCESS) {
+    mvm_releaseHandle(vm, &object);
+    throwVMError(env, err);
+    return env.Undefined();
+  }
+  Napi::Object result = VM::Value::wrap(vm, mvm_handleGet(&object));
+  mvm_releaseHandle(vm, &object);
+  return result;
+}
+
+Napi::Value NativeVM::objectSet(const Napi::CallbackInfo& info) {
+  auto env = info.Env();
+  if (info.Length() < 3 || !VM::Value::isVMValue(info[0]) || !VM::Value::isVMValue(info[1]) || !VM::Value::isVMValue(info[2])) {
+    Napi::TypeError::New(env, "Expected an object Value, property-name Value, and property Value").ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+  auto object = VM::Value::Unwrap(info[0].As<Napi::Object>());
+  auto propertyName = VM::Value::Unwrap(info[1].As<Napi::Object>());
+  auto value = VM::Value::Unwrap(info[2].As<Napi::Object>());
+  if (object->_vm != vm || propertyName->_vm != vm || value->_vm != vm) {
+    Napi::TypeError::New(env, "Values belong to a different NativeVM").ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+  mvm_TeError err = mvm_objectSet(vm, &object->_handle, &propertyName->_handle, &value->_handle);
+  if (err != MVM_E_SUCCESS) {
+    throwVMError(env, err);
+    return env.Undefined();
+  }
+  return env.Undefined();
+}
+
+Napi::Value NativeVM::objectKeys(const Napi::CallbackInfo& info) {
+  auto env = info.Env();
+  if (info.Length() < 1 || !VM::Value::isVMValue(info[0])) {
+    Napi::TypeError::New(env, "Expected an object Value").ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+  auto input = VM::Value::Unwrap(info[0].As<Napi::Object>());
+  if (input->_vm != vm) {
+    Napi::TypeError::New(env, "Value belongs to a different NativeVM").ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+  mvm_Handle keys = {};
+  mvm_initializeHandle(vm, &keys);
+  mvm_handleSet(&keys, mvm_handleGet(&input->_handle));
+  mvm_TeError err = mvm_objectKeys(vm, &keys);
+  if (err != MVM_E_SUCCESS) {
+    mvm_releaseHandle(vm, &keys);
+    throwVMError(env, err);
+    return env.Undefined();
+  }
+  Napi::Object values = VM::Value::wrap(vm, mvm_handleGet(&keys));
+  mvm_releaseHandle(vm, &keys);
+  return values;
+}
+
+Napi::Value NativeVM::getProperty(const Napi::CallbackInfo& info) {
+  auto env = info.Env();
+  if (info.Length() < 2 || !VM::Value::isVMValue(info[0]) || !VM::Value::isVMValue(info[1])) {
+    Napi::TypeError::New(env, "Expected an object Value and property-name Value").ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+  auto object = VM::Value::Unwrap(info[0].As<Napi::Object>());
+  auto propertyName = VM::Value::Unwrap(info[1].As<Napi::Object>());
+  if (object->_vm != vm || propertyName->_vm != vm) {
+    Napi::TypeError::New(env, "Values belong to a different NativeVM").ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+  mvm_Handle result = {};
+  mvm_initializeHandle(vm, &result);
+  mvm_TeError err = mvm_getProperty(vm, &object->_handle, &propertyName->_handle, &result);
+  if (err != MVM_E_SUCCESS) {
+    mvm_releaseHandle(vm, &result);
+    throwVMError(env, err);
+    return env.Undefined();
+  }
+  Napi::Object wrapped = VM::Value::wrap(vm, mvm_handleGet(&result));
+  mvm_releaseHandle(vm, &result);
+  return wrapped;
+}
+
+Napi::Value NativeVM::sameValue(const Napi::CallbackInfo& info) {
+  auto env = info.Env();
+  if (info.Length() < 2 || !VM::Value::isVMValue(info[0]) || !VM::Value::isVMValue(info[1])) {
+    Napi::TypeError::New(env, "Expected two NativeVM Values").ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+  auto left = VM::Value::Unwrap(info[0].As<Napi::Object>());
+  auto right = VM::Value::Unwrap(info[1].As<Napi::Object>());
+  if (left->_vm != vm || right->_vm != vm) {
+    Napi::TypeError::New(env, "Values belong to a different NativeVM").ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+  return Napi::Boolean::New(env, mvm_handleGet(&left->_handle) == mvm_handleGet(&right->_handle));
 }
 
 void NativeVM::runGC(const Napi::CallbackInfo& info) {

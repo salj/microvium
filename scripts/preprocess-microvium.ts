@@ -24,6 +24,10 @@ microviumH = performSubstitutions(microviumH);
 fs.writeFileSync('./dist-c/microvium.h', microviumH);
 
 fs.copyFileSync('./native-vm/microvium_port_example.h', './dist-c/microvium_port_example.h');
+// Optional and intentionally separate: this host-side convenience layer must
+// not become part of the portable interpreter amalgamation.
+fs.copyFileSync('./native-vm/microvium_scheduler.h', './dist-c/microvium_scheduler.h');
+fs.copyFileSync('./native-vm/microvium_scheduler.c', './dist-c/microvium_scheduler.c');
 
 function substituteFile(include: string, sourceFilename: string) {
   if (!microviumC.includes(include)) {

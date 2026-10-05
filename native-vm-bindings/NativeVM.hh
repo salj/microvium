@@ -30,6 +30,11 @@ public:
   void fatalError(int error);
   Napi::Value stopAfterNInstructions(const Napi::CallbackInfo&);
   Napi::Value getInstructionCountRemaining(const Napi::CallbackInfo&);
+#ifdef MVM_GAS_COUNTER
+  Napi::Value callResumable(const Napi::CallbackInfo&);
+  Napi::Value resume(const Napi::CallbackInfo&);
+  Napi::Value cancel(const Napi::CallbackInfo&);
+#endif
 
   static void setCoverageCallback(const Napi::CallbackInfo&);
   static Napi::FunctionReference coverageCallback;
@@ -38,6 +43,9 @@ public:
 private:
   static mvm_TeError resolveImportHandler(mvm_HostFunctionID hostFunctionID, void* context, mvm_TfHostFunction* out_hostFunction);
   static mvm_TeError hostFunctionHandler(mvm_VM* vm, mvm_HostFunctionID hostFunctionID, mvm_Value* result, mvm_Value* args, uint8_t argCount);
+#ifdef MVM_GAS_COUNTER
+  Napi::Value throwResumableError(Napi::Env env, mvm_TeError error, mvm_Value value);
+#endif
 
   mvm_VM* vm;
   uint8_t* bytecode;

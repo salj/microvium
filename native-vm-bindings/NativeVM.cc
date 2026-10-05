@@ -3,6 +3,8 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <cmath>
+#include <limits>
 #include "NativeVM.hh"
 #include "misc.hh"
 #include "error_descriptions.hh"
@@ -39,6 +41,11 @@ void NativeVM::Init(Napi::Env env, Napi::Object exports) {
     NativeVM::InstanceMethod("asyncStart", &NativeVM::asyncStart),
     NativeVM::InstanceMethod("stopAfterNInstructions", &NativeVM::stopAfterNInstructions),
     NativeVM::InstanceMethod("getInstructionCountRemaining", &NativeVM::getInstructionCountRemaining),
+#ifdef MVM_GAS_COUNTER
+    NativeVM::InstanceMethod("callResumable", &NativeVM::callResumable),
+    NativeVM::InstanceMethod("resume", &NativeVM::resume),
+    NativeVM::InstanceMethod("cancel", &NativeVM::cancel),
+#endif
     NativeVM::StaticValue("MVM_PORT_INT32_OVERFLOW_CHECKS", Napi::Boolean::New(env, MVM_PORT_INT32_OVERFLOW_CHECKS)),
   });
   constructor = Napi::Persistent(ctr);
@@ -290,6 +297,11 @@ void NativeVM::runGC(const Napi::CallbackInfo& info) {
 Napi::Value NativeVM::createSnapshot(const Napi::CallbackInfo& info) {
   size_t size;
   uint8_t* bytecode = (uint8_t*)mvm_createSnapshot(this->vm, &size);
+  if (!bytecode) {
+    Napi::Error::New(info.Env(), "Snapshot creation failed")
+      .ThrowAsJavaScriptException();
+    return info.Env().Undefined();
+  }
   auto buffer = Napi::Buffer<uint8_t>::Copy(info.Env(), bytecode, size);
   free(bytecode);
   return buffer;
@@ -360,6 +372,123 @@ Napi::Value NativeVM::call(const Napi::CallbackInfo& info) {
 
   return VM::Value::wrap(vm, result);
 }
+
+#ifdef MVM_GAS_COUNTER
+static bool readInstructionBudget(Napi::Env env, Napi::Value value, int32_t* out) {
+  if (!value.IsNumber()) {
+    Napi::TypeError::New(env, "Expected instruction budget to be a number")
+      .ThrowAsJavaScriptException();
+    return false;
+  }
+  const double n = value.ToNumber().DoubleValue();
+  if (!std::isfinite(n) || std::floor(n) != n || n < -1 || n > std::numeric_limits<int32_t>::max()) {
+    Napi::RangeError::New(env, "Instruction budget must be -1 or a non-negative 32-bit integer")
+      .ThrowAsJavaScriptException();
+    return false;
+  }
+  *out = static_cast<int32_t>(n);
+  return true;
+}
+
+static Napi::Value wrapRunResult(Napi::Env env, mvm_VM* vm, const mvm_TsRunResult& run) {
+  Napi::Object result = Napi::Object::New(env);
+  if (run.status == MVM_RUN_YIELDED) {
+    result.Set("status", Napi::String::New(env, "yielded"));
+  } else {
+    result.Set("status", Napi::String::New(env, "complete"));
+    result.Set("value", VM::Value::wrap(vm, run.value));
+  }
+  return result;
+}
+
+Napi::Value NativeVM::throwResumableError(Napi::Env env, mvm_TeError error, mvm_Value value) {
+  // Keep host exceptions thrown by import handlers intact.
+  if (this->error) {
+    std::unique_ptr<Napi::Error> err(std::move(this->error));
+    err->ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+  if (error == MVM_E_UNCAUGHT_EXCEPTION) {
+    const char* message = mvm_toStringUtf8(this->vm, value, NULL);
+    Napi::Error::New(env, message ? message : "Uncaught Microvium exception")
+      .ThrowAsJavaScriptException();
+  } else {
+    throwVMError(env, error);
+  }
+  return env.Undefined();
+}
+
+Napi::Value NativeVM::callResumable(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (info.Length() < 3) {
+    Napi::TypeError::New(env, "Expected a function, an argument array, and an instruction budget")
+      .ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+  if (!VM::Value::isVMValue(info[0])) {
+    Napi::TypeError::New(env, "Expected first argument to be a NativeVM `Value`")
+      .ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+  if (!info[1].IsArray()) {
+    Napi::TypeError::New(env, "Expected second argument to be an array of NativeVM `Value`s")
+      .ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+  int32_t budget;
+  if (!readInstructionBudget(env, info[2], &budget)) return env.Undefined();
+
+  Napi::Array argsArray = info[1].As<Napi::Array>();
+  const uint32_t argCount = argsArray.Length();
+  if (argCount > 126) {
+    throwVMError(env, MVM_E_TOO_MANY_ARGUMENTS);
+    return env.Undefined();
+  }
+  std::vector<mvm_Value> args;
+  args.reserve(argCount);
+  for (uint32_t i = 0; i < argCount; i++) {
+    Napi::Value item = argsArray.Get(i);
+    if (!VM::Value::isVMValue(item)) {
+      Napi::TypeError::New(env, "Expected second argument to be an array of NativeVM `Value`s")
+        .ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    args.push_back(VM::Value::unwrap(item));
+  }
+
+  mvm_TsRunResult run;
+  mvm_TeError error = mvm_callResumable(
+    vm, VM::Value::unwrap(info[0]), mvm_undefined,
+    args.empty() ? nullptr : args.data(), static_cast<uint8_t>(args.size()), budget, &run);
+  if (error != MVM_E_SUCCESS) return throwResumableError(env, error, run.value);
+  return wrapRunResult(env, vm, run);
+}
+
+Napi::Value NativeVM::resume(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (info.Length() < 1) {
+    Napi::TypeError::New(env, "Expected an instruction budget")
+      .ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+  int32_t budget;
+  if (!readInstructionBudget(env, info[0], &budget)) return env.Undefined();
+  mvm_TsRunResult run;
+  mvm_TeError error = mvm_resume(vm, budget, &run);
+  if (error != MVM_E_SUCCESS) return throwResumableError(env, error, run.value);
+  return wrapRunResult(env, vm, run);
+}
+
+Napi::Value NativeVM::cancel(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  mvm_TeError error = mvm_cancel(vm);
+  if (error != MVM_E_SUCCESS) {
+    throwVMError(env, error);
+    return env.Undefined();
+  }
+  return env.Undefined();
+}
+#endif // MVM_GAS_COUNTER
 
 NativeVM::~NativeVM() {
   if (this->vm) {

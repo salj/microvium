@@ -61,4 +61,8 @@ std::map<mvm_TeError, std::string> errorDescriptions = {
   { MVM_E_CLASS_PROTOTYPE_MUST_BE_NULL_OR_OBJECT, "The prototype property of a class must be null or a plain object" },
   { MVM_E_UNINITIALIZED_GLOBAL, "A global variable was not set before it was used" },
   { MVM_E_FFI_ABI_ERROR, "MVM_E_FFI_ABI_ERROR: Named FFI signature or binding does not match" },
+  { MVM_E_VM_BUSY, "The VM is already executing a call" },
+  { MVM_E_VM_SUSPENDED, "The VM has a suspended resumable call" },
+  { MVM_E_NO_RESUMABLE_EXECUTION, "There is no suspended resumable call to resume" },
+  { MVM_E_INVALID_INSTRUCTION_BUDGET, "Instruction budget must be -1 or a non-negative integer" },
 };

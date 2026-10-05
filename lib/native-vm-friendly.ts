@@ -68,6 +68,31 @@ export class NativeVMFriendly implements MicroviumNativeSubset {
     return new SnapshotClass(this.vm.createSnapshot());
   }
 
+  callResumable(func: Function, args: any[], instructionBudget: number): NativeVM.RunResult<any> {
+    if (!ValueWrapper.isWrapped(this.vm, func)) return invalidOperation('Expected a function resolved from this VM');
+    const vmFunc = ValueWrapper.unwrap(this.vm, func);
+    if (vmFunc.type !== mvm_TeType.VM_T_FUNCTION && vmFunc.type !== mvm_TeType.VM_T_CLASS) {
+      return invalidOperation('Target is not callable');
+    }
+    if (!Array.isArray(args)) throw new TypeError('Expected arguments to be an array');
+    const vmArgs = args.map(arg => hostValueToVM(this.vm, arg));
+    const run = this.vm.callResumable(vmFunc, vmArgs, instructionBudget);
+    return run.status === 'yielded'
+      ? run
+      : { status: 'complete', value: vmValueToHost(this.vm, run.value) };
+  }
+
+  resume(instructionBudget: number): NativeVM.RunResult<any> {
+    const run = this.vm.resume(instructionBudget);
+    return run.status === 'yielded'
+      ? run
+      : { status: 'complete', value: vmValueToHost(this.vm, run.value) };
+  }
+
+  cancel(): void {
+    this.vm.cancel();
+  }
+
   asyncStart(): Function {
     return vmValueToHost(this.vm, this.vm.asyncStart());
   }

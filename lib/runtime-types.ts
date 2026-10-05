@@ -95,6 +95,10 @@ export enum mvm_TeError {
   /* 59 */ MVM_E_RESERVED_59,
   /* 60 */ MVM_E_NUMERIC_ERROR, // Invalid mixed-numeric operation or conversion.
   /* 61 */ MVM_E_FFI_ABI_ERROR, // Named FFI signature or binding does not match.
+  /* 62 */ MVM_E_VM_BUSY, // VM is already executing a call.
+  /* 63 */ MVM_E_VM_SUSPENDED, // VM has a suspended resumable call.
+  /* 64 */ MVM_E_NO_RESUMABLE_EXECUTION, // There is no suspended resumable call to resume.
+  /* 65 */ MVM_E_INVALID_INSTRUCTION_BUDGET, // Instruction budget must be -1 or non-negative.
 };
 
 

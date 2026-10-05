@@ -20,6 +20,9 @@ export type HostFunction = (args: Value[]) => Value;
 export type ResolveImport = (hostFunctionID: vm_HostFunctionID) => HostFunction;
 export type ResolveNamedImport = (moduleName: string, importName: string, argumentCount: number) => HostFunction;
 export type CoverageCallback = (id: number, mode: CoverageCaseMode, indexInTable: number, tableSize: number, line: number) => void;
+export type RunResult<T> =
+  | { status: 'yielded' }
+  | { status: 'complete'; value: T };
 
 export const NativeVM = addon.NativeVM as NativeVMClass;
 
@@ -33,6 +36,9 @@ export interface NativeVMClass {
 export interface NativeVM {
   resolveExport(exportID: vm_VMExportID): Value;
   call(func: Value, args: Value[]): Value;
+  callResumable(func: Value, args: Value[], instructionBudget: number): RunResult<Value>;
+  resume(instructionBudget: number): RunResult<Value>;
+  cancel(): void;
   uint8ArrayFromBytes(data: Buffer): Value;
   typeOf(value: Value): mvm_TeType;
   newBoolean(value: boolean): Value;

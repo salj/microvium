@@ -931,6 +931,21 @@ typedef struct TsBreakpoint {
   See also the unit tests called "minimal-size"
 
 */
+#ifdef MVM_GAS_COUNTER
+typedef enum vm_TeResumableState {
+  VM_RESUMABLE_IDLE = 0,
+  VM_RESUMABLE_RUNNING = 1,
+  VM_RESUMABLE_SUSPENDED = 2
+} vm_TeResumableState;
+
+typedef enum vm_TeResumablePhase {
+  VM_RESUMABLE_PHASE_DISPATCH = 0,
+  VM_RESUMABLE_PHASE_EXECUTING = 1,
+  VM_RESUMABLE_PHASE_DRAINING_JOBS = 2,
+  VM_RESUMABLE_PHASE_COMPLETE = 3
+} vm_TeResumablePhase;
+#endif
+
 struct mvm_VM {
   uint16_t* globals;
   LongPtr lpBytecode;
@@ -952,6 +967,13 @@ struct mvm_VM {
 
   #ifdef MVM_GAS_COUNTER
   int32_t stopAfterNInstructions; // Set to -1 to disable
+  uint8_t resumableState; // 0 idle, 1 running, 2 suspended
+  uint8_t resumablePhase; // 0 dispatch, 1 executing bytecode, 2 draining jobs, 3 complete
+  uint8_t resumableResultAvailable;
+  uint8_t _resumableReserved;
+  int32_t resumableInstructionsRemaining; // Per-slice budget; -1 means unlimited
+  uint16_t resumableArgCountAndFlags;
+  Value resumableResult; // Rooted here while a resumable call drains queued jobs
   #endif // MVM_GAS_COUNTER
 
   uint16_t heapSizeUsedAfterLastGC;

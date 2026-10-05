@@ -52,7 +52,7 @@
  *
  * If the return code is MVM_E_UNCAUGHT_EXCEPTION then `out_result` points to the exception.
  */
-TeError mvm_call(VM* vm, Value targetFunc, Value* out_result, Value* args, uint8_t argCount) {
+static TeError vm_callInternal(VM* vm, Value targetFunc, Value* out_result, Value* args, uint8_t argCount, bool resumableStart, bool resumableResume, Value thisValue) {
   /*
   Note: when microvium calls the host, only `mvm_call` is on the call stack.
   This is for the objective of being lightweight. Each stack frame in an
@@ -218,12 +218,43 @@ TeError mvm_call(VM* vm, Value targetFunc, Value* out_result, Value* args, uint8
 
   registerValuesAtEntry = *reg;
 
-  // Because we're coming from C-land, any exceptions that happen during
-  // mvm_call should register as host errors
-  reg->pCatchTarget = NULL;
+  // A new host call establishes an exception boundary. A resumed call already
+  // has its script catch chain saved in the persistent registers.
+  if (!resumableResume) reg->pCatchTarget = NULL;
 
   // Copy the state of the VM registers into the logical variables for quick access
   CACHE_REGISTERS();
+
+#ifdef MVM_GAS_COUNTER
+  if (resumableResume) {
+    switch (vm->resumablePhase) {
+      case VM_RESUMABLE_PHASE_DISPATCH:
+        if (vm->stopAfterNInstructions == 0) {
+          err = MVM_E_INSTRUCTION_COUNT_REACHED;
+          goto SUB_EXIT;
+        }
+        if (vm->resumableInstructionsRemaining == 0) goto SUB_YIELD;
+        reg1 = vm->resumableArgCountAndFlags;
+        reg2 = vm_resolveIndirections(vm, *(Value*)getBottomOfStack(vm->stack));
+        reg3 = VM_VALUE_UNDEFINED;
+        vm->resumablePhase = VM_RESUMABLE_PHASE_EXECUTING;
+        goto SUB_DISPATCH_CALL_TARGET;
+      case VM_RESUMABLE_PHASE_EXECUTING:
+        goto SUB_DO_NEXT_INSTRUCTION;
+      case VM_RESUMABLE_PHASE_DRAINING_JOBS:
+        if (reg->jobQueue == VM_VALUE_UNDEFINED) {
+          vm->resumablePhase = VM_RESUMABLE_PHASE_COMPLETE;
+          goto SUB_EXIT;
+        }
+        goto SUB_CHECK_AND_START_JOB;
+      default:
+        err = MVM_E_HEAP_CORRUPT;
+        goto SUB_EXIT;
+    }
+  }
+#else
+  (void)resumableResume;
+#endif
 
   // ---------------------- Push host arguments to the stack ------------------
 
@@ -248,7 +279,7 @@ TeError mvm_call(VM* vm, Value targetFunc, Value* out_result, Value* args, uint8
     reg->argCountAndFlags &= ~AF_OVERRIDE_THIS;
   } else {
     CODE_COVERAGE(663); // Hit
-    PUSH(VM_VALUE_UNDEFINED); // Push `this` pointer of undefined
+    PUSH(resumableStart ? thisValue : VM_VALUE_UNDEFINED); // Push `this` pointer
   }
 
   TABLE_COVERAGE(argCount ? 1 : 0, 2, 513); // Hit 2/2
@@ -267,7 +298,21 @@ TeError mvm_call(VM* vm, Value targetFunc, Value* out_result, Value* args, uint8
   // `new` the class. This doesn't violate anything from the spec because it
   // doesn't affect JS calls, but it makes interacting with classes from C much
   // easier.
-  if (deepTypeOf(vm, targetFunc) == TC_REF_CLASS) {
+  #ifdef MVM_GAS_COUNTER
+  if (resumableStart) {
+    vm->resumableArgCountAndFlags = reg1;
+    vm->resumablePhase = VM_RESUMABLE_PHASE_DISPATCH;
+    if (vm->stopAfterNInstructions == 0) {
+      err = MVM_E_INSTRUCTION_COUNT_REACHED;
+      goto SUB_EXIT;
+    }
+    if (vm->resumableInstructionsRemaining == 0) goto SUB_YIELD;
+    vm->resumablePhase = VM_RESUMABLE_PHASE_EXECUTING;
+  }
+  #endif
+
+SUB_DISPATCH_CALL_TARGET:
+  if (deepTypeOf(vm, reg2) == TC_REF_CLASS) {
     goto SUB_NEW;
   } else {
     goto SUB_CALL;
@@ -323,6 +368,10 @@ SUB_DO_NEXT_INSTRUCTION:
       CODE_COVERAGE(652); // Hit
       vm->stopAfterNInstructions--;
     }
+  }
+  if (vm->resumableState == VM_RESUMABLE_RUNNING && vm->resumableInstructionsRemaining >= 0) {
+    if (vm->resumableInstructionsRemaining == 0) goto SUB_YIELD;
+    vm->resumableInstructionsRemaining--;
   }
   #endif
 
@@ -2728,6 +2777,15 @@ SUB_RETURN_TO_HOST: {
   CODE_COVERAGE(110); // Hit
 
   // Provide the return value to the host
+#ifdef MVM_GAS_COUNTER
+  if (vm->resumableState == VM_RESUMABLE_RUNNING) {
+    if (!vm->resumableResultAvailable) {
+      vm->resumableResult = reg1;
+      vm->resumableResultAvailable = 1;
+    }
+    vm->resumablePhase = VM_RESUMABLE_PHASE_DRAINING_JOBS;
+  } else
+#endif
   if (out_result) {
     *out_result = reg1;
   }
@@ -2736,24 +2794,49 @@ SUB_RETURN_TO_HOST: {
   if ((reg->jobQueue != VM_VALUE_UNDEFINED) && (pStackPointer == getBottomOfStack(vm->stack))) {
     CODE_COVERAGE(680); // Hit
 
-    // Whatever the result has been set to for the primary call target, we don't
-    // want to change to the result of any job
+    // Do not overwrite the primary result with a job's return value in legacy
+    // mode. Resumable calls retain the primary result in the VM, and keep the
+    // current host result slot available for an uncaught job exception.
+#ifdef MVM_GAS_COUNTER
+    if (vm->resumableState != VM_RESUMABLE_RUNNING)
+#endif
     out_result = NULL;
-
-    FLUSH_REGISTER_CACHE();
-    reg1 /* argCountAndFlags */ = 0 | AF_CALLED_FROM_HOST; // No args, and return to host when complete
-    reg2 /* target */ = vm_dequeueJob(vm);
-    VM_ASSERT(vm, deepTypeOf(vm, reg2) == TC_REF_CLOSURE); // I expect it to be a closure, although not technically required here
-    reg3 /* cpsCallback */ = VM_VALUE_UNDEFINED;
-    CACHE_REGISTERS();
-
-    goto SUB_CALL;
+    goto SUB_CHECK_AND_START_JOB;
   } else {
     CODE_COVERAGE(681); // Hit
   }
 
+#ifdef MVM_GAS_COUNTER
+  if (vm->resumableState == VM_RESUMABLE_RUNNING) {
+    vm->resumablePhase = VM_RESUMABLE_PHASE_COMPLETE;
+  }
+#endif
   goto SUB_EXIT;
 }
+
+SUB_CHECK_AND_START_JOB:
+#ifdef MVM_GAS_COUNTER
+  if (vm->resumableState == VM_RESUMABLE_RUNNING) {
+    if (vm->stopAfterNInstructions == 0) {
+      err = MVM_E_INSTRUCTION_COUNT_REACHED;
+      goto SUB_EXIT;
+    }
+    if (vm->resumableInstructionsRemaining == 0) goto SUB_YIELD;
+    vm->resumablePhase = VM_RESUMABLE_PHASE_DRAINING_JOBS;
+  }
+#endif
+  FLUSH_REGISTER_CACHE();
+  reg1 /* argCountAndFlags */ = 0 | AF_CALLED_FROM_HOST; // No args, and return to host when complete
+  reg2 /* target */ = vm_dequeueJob(vm);
+  VM_ASSERT(vm, deepTypeOf(vm, reg2) == TC_REF_CLOSURE); // I expect it to be a closure, although not technically required here
+  reg3 /* cpsCallback */ = VM_VALUE_UNDEFINED;
+  CACHE_REGISTERS();
+#ifdef MVM_GAS_COUNTER
+  if (vm->resumableState == VM_RESUMABLE_RUNNING) {
+    vm->resumablePhase = VM_RESUMABLE_PHASE_EXECUTING;
+  }
+#endif
+  goto SUB_CALL;
 
 /* ------------------------------------------------------------------------- */
 /*                                                                           */
@@ -3205,11 +3288,39 @@ SUB_TAIL_POP_0_PUSH_0:
   if (err != MVM_E_SUCCESS) goto SUB_EXIT;
   goto SUB_DO_NEXT_INSTRUCTION;
 
+#ifdef MVM_GAS_COUNTER
+SUB_YIELD:
+  FLUSH_REGISTER_CACHE();
+  vm->resumableState = VM_RESUMABLE_SUSPENDED;
+  return MVM_E_SUCCESS;
+#endif
+
 SUB_EXIT:
   CODE_COVERAGE(165); // Hit
 
   #if MVM_SAFE_MODE
   FLUSH_REGISTER_CACHE();
+  #endif
+
+  #ifdef MVM_GAS_COUNTER
+  if (vm->resumableState == VM_RESUMABLE_RUNNING) {
+    if (err == MVM_E_SUCCESS && vm->resumablePhase == VM_RESUMABLE_PHASE_COMPLETE) {
+      if (out_result) *out_result = vm->resumableResult;
+    }
+    // A resumable error aborts the complete suspended invocation. Its stack
+    // cannot be restored to the state captured at this particular resume.
+    vm_free(vm, vm->stack);
+    vm->stack = NULL;
+    vm->resumableState = VM_RESUMABLE_IDLE;
+    vm->resumablePhase = VM_RESUMABLE_PHASE_DISPATCH;
+    vm->resumableResultAvailable = 0;
+    vm->resumableResult = VM_VALUE_UNDEFINED;
+    vm->resumableInstructionsRemaining = -1;
+    return err;
+  }
+  #endif
+
+  #if MVM_SAFE_MODE
   VM_ASSERT(vm, registerValuesAtEntry.pStackPointer <= reg->pStackPointer);
   VM_ASSERT(vm, registerValuesAtEntry.pFrameBase <= reg->pFrameBase);
   #endif
@@ -3237,7 +3348,17 @@ SUB_EXIT:
   }
 
   return err;
-} // End of mvm_call
+} // End of vm_callInternal
+
+TeError mvm_call(VM* vm, Value targetFunc, Value* out_result, Value* args, uint8_t argCount) {
+#ifdef MVM_GAS_COUNTER
+  if (vm) {
+    if (vm->resumableState == VM_RESUMABLE_RUNNING) return MVM_E_VM_BUSY;
+    if (vm->resumableState == VM_RESUMABLE_SUSPENDED) return MVM_E_VM_SUSPENDED;
+  }
+#endif
+  return vm_callInternal(vm, targetFunc, out_result, args, argCount, false, false, VM_VALUE_UNDEFINED);
+}
 
 /**
  * Creates a new array of length 0 and the given capacity and initializes the
@@ -3369,6 +3490,13 @@ TeError mvm_callEx(VM* vm, Value targetFunc, Value thisValue, Value* out_result,
 
   CODE_COVERAGE_UNTESTED(659); // Hit
 
+#ifdef MVM_GAS_COUNTER
+  if (vm) {
+    if (vm->resumableState == VM_RESUMABLE_RUNNING) return MVM_E_VM_BUSY;
+    if (vm->resumableState == VM_RESUMABLE_SUSPENDED) return MVM_E_VM_SUSPENDED;
+  }
+#endif
+
   if (!vm->stack) {
     CODE_COVERAGE_UNTESTED(660); // Not hit
     err = vm_createStackAndRegisters(vm);
@@ -3397,6 +3525,102 @@ TeError mvm_callEx(VM* vm, Value targetFunc, Value thisValue, Value* out_result,
 
   return mvm_call(vm, targetFunc, out_result, args, argCount);
 }
+
+#ifdef MVM_GAS_COUNTER
+static void vm_discardResumableExecution(VM* vm) {
+  if (vm->stack) {
+    vm_free(vm, vm->stack);
+    vm->stack = NULL;
+  }
+  vm->resumableState = VM_RESUMABLE_IDLE;
+  vm->resumablePhase = VM_RESUMABLE_PHASE_DISPATCH;
+  vm->resumableResultAvailable = 0;
+  vm->resumableResult = VM_VALUE_UNDEFINED;
+  vm->resumableInstructionsRemaining = -1;
+  vm->resumableArgCountAndFlags = 0;
+}
+
+static bool vm_isValidInstructionBudget(int32_t instructionBudget) {
+  return instructionBudget >= -1;
+}
+
+static mvm_TeError vm_returnRunResultError(mvm_TsRunResult* out, mvm_TeError error) {
+  out->status = MVM_RUN_YIELDED;
+  out->value = VM_VALUE_UNDEFINED;
+  return error;
+}
+
+mvm_TeError mvm_callResumable(mvm_VM* vm, mvm_Value function, mvm_Value thisValue, mvm_Value* args, uint8_t argCount, int32_t instructionBudget, mvm_TsRunResult* out) {
+  if (!out) return MVM_E_INVALID_ARGUMENTS;
+  if (!vm || (argCount && !args)) return vm_returnRunResultError(out, MVM_E_INVALID_ARGUMENTS);
+  if (argCount > (AF_ARG_COUNT_MASK - 1)) return vm_returnRunResultError(out, MVM_E_TOO_MANY_ARGUMENTS);
+  if (!vm_isValidInstructionBudget(instructionBudget)) return vm_returnRunResultError(out, MVM_E_INVALID_INSTRUCTION_BUDGET);
+  if (vm->resumableState == VM_RESUMABLE_RUNNING) return vm_returnRunResultError(out, MVM_E_VM_BUSY);
+  if (vm->resumableState == VM_RESUMABLE_SUSPENDED) return vm_returnRunResultError(out, MVM_E_VM_SUSPENDED);
+  if (vm->stack) return vm_returnRunResultError(out, MVM_E_VM_BUSY);
+
+  vm->resumableState = VM_RESUMABLE_RUNNING;
+  vm->resumablePhase = VM_RESUMABLE_PHASE_DISPATCH;
+  vm->resumableResultAvailable = 0;
+  vm->resumableResult = VM_VALUE_UNDEFINED;
+  vm->resumableInstructionsRemaining = instructionBudget;
+  vm->resumableArgCountAndFlags = 0;
+
+  Value result = VM_VALUE_UNDEFINED;
+  TeError err = vm_callInternal(vm, function, &result, args, argCount, true, false, thisValue);
+  if (err != MVM_E_SUCCESS && vm->resumableState != VM_RESUMABLE_IDLE) {
+    vm_discardResumableExecution(vm);
+  }
+  out->status = MVM_RUN_YIELDED;
+  out->value = VM_VALUE_UNDEFINED;
+  if (err == MVM_E_SUCCESS) {
+    if (vm->resumableState == VM_RESUMABLE_SUSPENDED) {
+      out->status = MVM_RUN_YIELDED;
+    } else {
+      out->status = MVM_RUN_COMPLETE;
+      out->value = result;
+    }
+  } else if (err == MVM_E_UNCAUGHT_EXCEPTION) {
+    out->value = result;
+  }
+  return err;
+}
+
+mvm_TeError mvm_resume(mvm_VM* vm, int32_t instructionBudget, mvm_TsRunResult* out) {
+  if (!vm || !out) return MVM_E_INVALID_ARGUMENTS;
+  out->status = MVM_RUN_YIELDED;
+  out->value = VM_VALUE_UNDEFINED;
+  if (!vm_isValidInstructionBudget(instructionBudget)) return MVM_E_INVALID_INSTRUCTION_BUDGET;
+  if (vm->resumableState == VM_RESUMABLE_RUNNING) return MVM_E_VM_BUSY;
+  if (vm->resumableState != VM_RESUMABLE_SUSPENDED) return MVM_E_NO_RESUMABLE_EXECUTION;
+
+  vm->resumableState = VM_RESUMABLE_RUNNING;
+  vm->resumableInstructionsRemaining = instructionBudget;
+  Value result = VM_VALUE_UNDEFINED;
+  TeError err = vm_callInternal(vm, VM_VALUE_UNDEFINED, &result, NULL, 0, false, true, VM_VALUE_UNDEFINED);
+  if (err != MVM_E_SUCCESS && vm->resumableState != VM_RESUMABLE_IDLE) {
+    vm_discardResumableExecution(vm);
+  }
+  if (err == MVM_E_SUCCESS) {
+    if (vm->resumableState == VM_RESUMABLE_SUSPENDED) {
+      out->status = MVM_RUN_YIELDED;
+    } else {
+      out->status = MVM_RUN_COMPLETE;
+      out->value = result;
+    }
+  } else if (err == MVM_E_UNCAUGHT_EXCEPTION) {
+    out->value = result;
+  }
+  return err;
+}
+
+mvm_TeError mvm_cancel(mvm_VM* vm) {
+  if (!vm) return MVM_E_INVALID_ARGUMENTS;
+  if (vm->resumableState == VM_RESUMABLE_RUNNING) return MVM_E_VM_BUSY;
+  if (vm->resumableState == VM_RESUMABLE_SUSPENDED) vm_discardResumableExecution(vm);
+  return MVM_E_SUCCESS;
+}
+#endif // MVM_GAS_COUNTER
 
 const Value mvm_undefined = VM_VALUE_UNDEFINED;
 const Value mvm_null = VM_VALUE_NULL;
@@ -5618,6 +5842,12 @@ void mvm_runGC(VM* vm, bool squeeze) {
     TABLE_COVERAGE(handle->_next ? 1 : 0, 2, 497); // Hit 2/2
     handle = handle->_next;
   }
+
+  #ifdef MVM_GAS_COUNTER
+  if (vm->resumableState != VM_RESUMABLE_IDLE && vm->resumableResultAvailable) {
+    gc_processValue(&gc, &vm->resumableResult);
+  }
+  #endif
 
   // Roots on the stack or registers
   vm_TsStack* stack = vm->stack;
@@ -9308,6 +9538,10 @@ void* mvm_createSnapshot(mvm_VM* vm, size_t* out_size) {
   CODE_COVERAGE(503); // Hit
   if (out_size)
     *out_size = 0;
+
+  #ifdef MVM_GAS_COUNTER
+  if (vm->resumableState != VM_RESUMABLE_IDLE) return NULL;
+  #endif
 
   uint16_t heapOffset = getSectionOffset(vm->lpBytecode, BCS_HEAP);
   uint16_t heapSize = getHeapSize(vm);

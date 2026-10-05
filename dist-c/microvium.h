@@ -85,6 +85,10 @@ typedef enum mvm_TeError {
   /* 59 */ MVM_E_RESERVED_59,
   /* 60 */ MVM_E_NUMERIC_ERROR, // Invalid mixed-numeric operation or conversion.
   /* 61 */ MVM_E_FFI_ABI_ERROR, // Named FFI signature or binding does not match.
+  /* 62 */ MVM_E_VM_BUSY, // VM is already executing a call.
+  /* 63 */ MVM_E_VM_SUSPENDED, // VM has a suspended resumable call.
+  /* 64 */ MVM_E_NO_RESUMABLE_EXECUTION, // There is no suspended resumable call to resume.
+  /* 65 */ MVM_E_INVALID_INSTRUCTION_BUDGET, // Instruction budget must be -1 or non-negative.
 } mvm_TeError;
 
 typedef enum mvm_TeNumericKind {
@@ -678,6 +682,57 @@ MVM_EXPORT void mvm_stopAfterNInstructions(mvm_VM* vm, int32_t n);
  * The return value will be negative if the countdown is currently disabled.
  */
 MVM_EXPORT int32_t mvm_getInstructionCountRemaining(mvm_VM* vm);
+
+/** Result of a resumable call or one resume slice. */
+typedef enum mvm_TeRunStatus {
+  MVM_RUN_COMPLETE,
+  MVM_RUN_YIELDED
+} mvm_TeRunStatus;
+
+typedef struct mvm_TsRunResult {
+  mvm_TeRunStatus status;
+  mvm_Value value;
+} mvm_TsRunResult;
+
+/**
+ * Start a resumable call. The VM must be idle. This behaves like mvm_callEx,
+ * including class construction and promise-job draining, but returns at an
+ * instruction boundary when the slice budget is exhausted. The input arguments
+ * are copied before this function returns. `out` is required; `args` is
+ * required only when `argCount` is nonzero. The VM rejects ordinary call entry
+ * while this call is running or suspended, including same-VM reentry from a
+ * host callback.
+ *
+ * instructionBudget is -1 for unlimited execution, 0 to yield before invoking
+ * the target, or a positive number of bytecode instructions for this slice.
+ * The legacy mvm_stopAfterNInstructions limit, if enabled, remains a separate
+ * cumulative abort limit.
+ *
+ * On success, out->status is MVM_RUN_COMPLETE or MVM_RUN_YIELDED. COMPLETE
+ * carries the initial call's result after queued jobs drain; YIELDED carries
+ * undefined. On an uncaught exception, out->value contains the exception.
+ * Other errors set out->value to undefined; out->status is then ignored.
+ * Invalid arguments and rejected state transitions leave an existing
+ * suspended call intact. An execution error after dispatch discards the whole
+ * resumable call and returns the VM to idle.
+ */
+MVM_EXPORT mvm_TeError mvm_callResumable(mvm_VM* vm, mvm_Value function, mvm_Value thisValue, mvm_Value* args, uint8_t argCount, int32_t instructionBudget, mvm_TsRunResult* out);
+
+/**
+ * Continue a suspended call with a replacement per-slice instruction budget.
+ * The budget uses the same -1, 0, and positive-value rules as
+ * mvm_callResumable. Calling this while idle returns
+ * MVM_E_NO_RESUMABLE_EXECUTION.
+ */
+MVM_EXPORT mvm_TeError mvm_resume(mvm_VM* vm, int32_t instructionBudget, mvm_TsRunResult* out);
+
+/**
+ * Discard a suspended call. Succeeds if the VM is already idle; returns
+ * MVM_E_VM_BUSY if a host callback or bytecode frame is currently running.
+ * Cancellation discards frames and queued jobs but does not roll back heap or
+ * host side effects already performed.
+ */
+MVM_EXPORT mvm_TeError mvm_cancel(mvm_VM* vm);
 #endif // MVM_GAS_COUNTER
 
 #ifdef __cplusplus

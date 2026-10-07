@@ -7565,7 +7565,15 @@ static void gc_newBucket(gc_TsGCCollectionState* gc, uint16_t newSpaceSize, uint
   TsBucket* pBucket = (TsBucket*)vm_malloc(gc->vm, sizeof (TsBucket) + newSpaceSize);
   if (!pBucket) {
     CODE_COVERAGE_ERROR_PATH(376); // Not hit
-    MVM_FATAL_ERROR(NULL, MVM_E_MALLOC_FAIL);
+    // The host may destroy the VM and longjmp from its fatal handler. The
+    // destination heap is not owned by the VM yet, so release it here.
+    TsBucket* failedBucket = gc->lastBucket;
+    while (failedBucket) {
+      TsBucket* previous = failedBucket->prev;
+      vm_free(gc->vm, failedBucket);
+      failedBucket = previous;
+    }
+    MVM_FATAL_ERROR(gc->vm, MVM_E_MALLOC_FAIL);
     return;
   }
   pBucket->next = NULL;
